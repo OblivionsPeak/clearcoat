@@ -304,6 +304,7 @@ input  { font-family: inherit; }
   padding: 2px 4px;
 }
 .layer-item .vis:hover { color: var(--ink); }
+.layer-item .vis.locked { color: var(--orange); }
 .layer-item.hidden-layer .thumb,
 .layer-item.hidden-layer .lname { opacity: .35; }
 .layer-item .order-btns { display: flex; flex-direction: column; gap: 0; }

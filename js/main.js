@@ -138,7 +138,7 @@ function draw() {
   if (sel && sel.visible) {
     const corners = layerCorners(sel).map(p => docToScreen(p.x, p.y));
     vctx.save();
-    vctx.strokeStyle = '#ff4d00';
+    vctx.strokeStyle = sel.locked ? '#5d636e' : '#ff4d00';
     vctx.lineWidth = 1.5;
     vctx.setLineDash([6, 4]);
     vctx.beginPath();
@@ -147,14 +147,17 @@ function draw() {
     vctx.stroke();
     vctx.setLineDash([]);
 
-    // scale handles at corners (resize the region for pattern layers)
-    vctx.fillStyle = '#ff4d00';
-    for (const p of corners) {
-      vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
+    // scale handles at corners (resize the region for pattern layers);
+    // locked layers show the outline only
+    if (!sel.locked) {
+      vctx.fillStyle = '#ff4d00';
+      for (const p of corners) {
+        vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
+      }
     }
 
     // rotate handle — image layers only (regions stay axis-aligned)
-    if (!isRegionLayer(sel)) {
+    if (!sel.locked && !isRegionLayer(sel)) {
       const rot = rotateHandlePos(sel);
       vctx.beginPath();
       vctx.arc(rot.x, rot.y, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
@@ -180,7 +183,7 @@ let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan', ... }
 
 function handleAt(sx, sy) {
   const sel = selectedLayer();
-  if (!sel || !sel.visible) return null;
+  if (!sel || !sel.visible || sel.locked) return null;
   if (!isRegionLayer(sel)) {
     const rot = rotateHandlePos(sel);
     if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'rotate' };
@@ -411,6 +414,18 @@ function rebuildLayerList() {
     mat.className = 'lmat';
     mat.textContent = layer.material;
 
+    const lock = document.createElement('button');
+    lock.className = 'vis' + (layer.locked ? ' locked' : '');
+    lock.title = layer.locked ? 'Unlock layer (canvas clicks pass through it)' : 'Lock layer — clicks on the canvas pass through to layers beneath';
+    lock.textContent = layer.locked ? '🔒' : '🔓';
+    lock.addEventListener('click', (e) => {
+      e.stopPropagation();
+      layer.locked = !layer.locked;
+      rebuildLayerList();
+      requestRender();
+      scheduleAutosave();
+    });
+
     const vis = document.createElement('button');
     vis.className = 'vis';
     vis.title = layer.visible ? 'Hide layer' : 'Show layer';
@@ -432,7 +447,7 @@ function rebuildLayerList() {
     down.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(layer, -1); });
     order.append(up, down);
 
-    li.append(thumb, name, mat, vis, order);
+    li.append(thumb, name, mat, lock, vis, order);
     li.addEventListener('click', () => selectLayer(layer.id));
     list.appendChild(li);
   });
@@ -1059,6 +1074,7 @@ async function addTgaAsLayer(arrayBuffer, name) {
   const img = await loadImage(src);
   const layer = createImageLayer(img, src, name);
   layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = SIZE / img.width; // full sheet
+  layer.locked = true; // full-sheet base — don't let it swallow canvas clicks
   doc.layers.push(layer);
   selectLayer(layer.id);
   markDirty();
@@ -1144,7 +1160,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'l' || e.key === 'L') { setShineView(!shineView); return; }
 
   const sel = selectedLayer();
-  if (sel && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+  if (sel && !sel.locked && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     e.preventDefault();
     const step = e.shiftKey ? 10 : 1;
     if (e.key === 'ArrowUp') sel.y -= step;

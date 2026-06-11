@@ -363,7 +363,7 @@ export function hitTestAll(doc, px, py) {
   const hits = [];
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
-    if (!l.visible || isRegionLayer(l)) continue;
+    if (!l.visible || l.locked || isRegionLayer(l)) continue;
     const local = toLocal(l, px, py);
     if (Math.abs(local.x) <= l.img.width / 2 && Math.abs(local.y) <= l.img.height / 2) {
       hits.push(l);
@@ -371,7 +371,7 @@ export function hitTestAll(doc, px, py) {
   }
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
-    if (!l.visible || !isRegionLayer(l)) continue;
+    if (!l.visible || l.locked || !isRegionLayer(l)) continue;
     if (px >= l.rx && px <= l.rx + l.rw && py >= l.ry && py <= l.ry + l.rh) hits.push(l);
   }
   return hits;
@@ -425,7 +425,7 @@ export function serializeDoc(doc) {
     template: doc.template ? doc.template.src : null,
     layers: doc.layers.map(l => ({
       id: l.id, type: l.type, name: l.name,
-      visible: l.visible, opacity: l.opacity, material: l.material,
+      visible: l.visible, locked: !!l.locked, opacity: l.opacity, material: l.material,
       matParams: l.matParams || null,
       specBlend: l.specBlend || 'replace',
       color: l.color,
@@ -466,7 +466,7 @@ export async function deserializeDoc(data) {
         doc.layers.push({
           ...createFillLayer(l.color || '#e8e6e1'),
           id: l.id || newId(), name: l.name || 'fill',
-          visible: l.visible !== false, opacity: l.opacity ?? 1,
+          visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1,
           material: l.material || 'gloss',
           matParams: l.matParams || null,
           specBlend: l.specBlend || 'replace',
@@ -479,7 +479,7 @@ export async function deserializeDoc(data) {
         id: l.id || newId(),
         type: l.type === 'pattern' ? 'pattern' : 'image',
         name: l.name || 'image',
-        visible: l.visible !== false, opacity: l.opacity ?? 1,
+        visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1,
         material: l.material || 'gloss',
         matParams: l.matParams || null,
         specBlend: l.specBlend || 'replace',
