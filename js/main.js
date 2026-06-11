@@ -448,11 +448,31 @@ function syncInspector() {
       }
     }
   }
-  if (isBase) {
-    $('ins-base-color').value = doc.baseColor;
-    $('ins-base-color-val').textContent = doc.baseColor.toUpperCase();
-  }
+  if (isBase) syncBaseColorFields();
   syncMaterialGrid();
+}
+
+// keep swatch, hex field, and RGB fields in agreement (skip whichever the
+// user is currently typing in)
+function syncBaseColorFields() {
+  const hex = doc.baseColor;
+  $('ins-base-color').value = hex;
+  $('basecoat-color').value = hex;
+  if (document.activeElement !== $('ins-base-hex')) {
+    $('ins-base-hex').value = hex.toUpperCase();
+    $('ins-base-hex').classList.remove('invalid');
+  }
+  const rgb = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  ['ins-base-r', 'ins-base-g', 'ins-base-b'].forEach((id, i) => {
+    if (document.activeElement !== $(id)) $(id).value = rgb[i];
+  });
+}
+
+function setBaseColor(hex) {
+  doc.baseColor = hex.toLowerCase();
+  syncBaseColorFields();
+  syncMaterialGrid();
+  markDirty();
 }
 
 function syncMaterialGrid() {
@@ -510,23 +530,39 @@ $('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if 
 $('ins-delete').addEventListener('click', deleteSelected);
 $('ins-duplicate').addEventListener('click', duplicateSelected);
 
-$('ins-base-color').addEventListener('input', () => {
-  doc.baseColor = $('ins-base-color').value;
-  $('basecoat-color').value = doc.baseColor;
-  $('ins-base-color-val').textContent = doc.baseColor.toUpperCase();
-  syncMaterialGrid();
-  markDirty();
+$('ins-base-color').addEventListener('input', () => setBaseColor($('ins-base-color').value));
+
+$('ins-base-hex').addEventListener('input', () => {
+  const raw = $('ins-base-hex').value.trim().replace(/^#?/, '#');
+  const valid = /^#[0-9a-fA-F]{6}$/.test(raw);
+  $('ins-base-hex').classList.toggle('invalid', !valid);
+  if (valid) setBaseColor(raw);
 });
+$('ins-base-hex').addEventListener('blur', () => syncBaseColorFields());
+$('ins-base-hex').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('ins-base-hex').blur();
+});
+
+for (const [id, idx] of [['ins-base-r', 0], ['ins-base-g', 1], ['ins-base-b', 2]]) {
+  $(id).addEventListener('input', () => {
+    const v = parseInt($(id).value, 10);
+    if (!Number.isFinite(v)) return;
+    const c = Math.max(0, Math.min(255, v));
+    const rgb = [
+      parseInt(doc.baseColor.slice(1, 3), 16),
+      parseInt(doc.baseColor.slice(3, 5), 16),
+      parseInt(doc.baseColor.slice(5, 7), 16),
+    ];
+    rgb[idx] = c;
+    setBaseColor('#' + rgb.map(n => n.toString(16).padStart(2, '0')).join(''));
+  });
+  $(id).addEventListener('blur', () => syncBaseColorFields());
+}
 
 // base coat row
 $('basecoat-row').addEventListener('click', () => selectLayer('base'));
 $('basecoat-color').addEventListener('click', (e) => e.stopPropagation());
-$('basecoat-color').addEventListener('input', () => {
-  doc.baseColor = $('basecoat-color').value;
-  if (selectedId === 'base') syncInspector();
-  else syncMaterialGrid();
-  markDirty();
-});
+$('basecoat-color').addEventListener('input', () => setBaseColor($('basecoat-color').value));
 
 // ---------- template ----------
 

@@ -430,6 +430,42 @@ input  { font-family: inherit; }
 }
 .ins-name:focus { outline: none; border-color: var(--seam-bright); }
 
+.hexfield {
+  flex: 1;
+  min-width: 0;
+  background: var(--asphalt);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 5px 7px;
+  text-transform: uppercase;
+}
+.hexfield:focus { outline: none; border-color: var(--seam-bright); }
+.hexfield.invalid { border-color: var(--danger); }
+
+.rgb-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.rgb-grid label {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 10px; color: var(--ink-faint);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.rgb-grid input {
+  background: var(--asphalt);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 5px 6px;
+  width: 100%;
+}
+.rgb-grid input:focus { outline: none; border-color: var(--seam-bright); }
+
 .xform-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
