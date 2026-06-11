@@ -1,7 +1,7 @@
 import {
   SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, renderPaint, renderSpec,
   hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
-  templateOverlay,
+  templateOverlay, defaultParams, resolveParams,
 } from './engine.js';
 import { canvasToTGA, tgaToCanvas } from './tga.js';
 import { psdToTemplate } from './psd.js';
@@ -421,7 +421,13 @@ function deleteSelected() {
 function duplicateSelected() {
   const sel = selectedLayer();
   if (!sel) return;
-  const copy = { ...sel, id: 'L' + Math.random().toString(36).slice(2), name: sel.name + ' copy', x: sel.x + 40, y: sel.y + 40 };
+  const copy = {
+    ...sel,
+    id: 'L' + Math.random().toString(36).slice(2),
+    name: sel.name + ' copy',
+    x: sel.x + 40, y: sel.y + 40,
+    matParams: sel.matParams ? { ...sel.matParams } : null,
+  };
   doc.layers.push(copy);
   selectLayer(copy.id);
   markDirty();
@@ -475,15 +481,69 @@ function setBaseColor(hex) {
   markDirty();
 }
 
+// the layer or base coat whose material is being edited
+function matTarget() {
+  if (selectedId === 'base') {
+    return {
+      get material() { return doc.baseMaterial; },
+      set material(v) { doc.baseMaterial = v; },
+      get matParams() { return doc.baseMatParams; },
+      set matParams(v) { doc.baseMatParams = v; },
+    };
+  }
+  return selectedLayer();
+}
+
 function syncMaterialGrid() {
-  const current = selectedId === 'base' ? doc.baseMaterial : selectedLayer()?.material;
+  const target = matTarget();
+  const current = target?.material;
   // shade every ball with the color the material would actually be applied to
   const albedo = selectedId === 'base' ? doc.baseColor : layerAlbedo(selectedLayer(), doc.baseColor);
+  const activeParams = target ? resolveParams(current, target.matParams) : null;
   document.querySelectorAll('.material-swatch').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.material === current);
-    renderBall(btn.querySelector('.ball'), btn.dataset.material, albedo);
+    const isActive = btn.dataset.material === current;
+    btn.classList.toggle('active', isActive);
+    renderBall(btn.querySelector('.ball'), btn.dataset.material, albedo, isActive ? activeParams : null);
+  });
+  syncMaterialTune();
+}
+
+const TUNE_KEYS = ['met', 'rough', 'clear', 'density', 'scale', 'contrast'];
+
+function syncMaterialTune() {
+  const target = matTarget();
+  if (!target) return;
+  const p = resolveParams(target.material, target.matParams);
+  for (const key of TUNE_KEYS) {
+    const row = $(`tune-${key}`).closest('.slider-row');
+    const applies = p[key] !== undefined;
+    row.hidden = !applies;
+    if (!applies) continue;
+    $(`tune-${key}`).value = p[key];
+    $(`tune-${key}-val`).textContent = key === 'density' || key === 'contrast' ? p[key] + '%' : p[key];
+  }
+}
+
+for (const key of TUNE_KEYS) {
+  $(`tune-${key}`).addEventListener('input', () => {
+    const target = matTarget();
+    if (!target) return;
+    const p = resolveParams(target.material, target.matParams);
+    p[key] = parseInt($(`tune-${key}`).value, 10);
+    target.matParams = p;
+    $(`tune-${key}-val`).textContent = key === 'density' || key === 'contrast' ? p[key] + '%' : p[key];
+    syncMaterialGrid();
+    markDirty();
   });
 }
+
+$('tune-reset').addEventListener('click', () => {
+  const target = matTarget();
+  if (!target) return;
+  target.matParams = null;
+  syncMaterialGrid();
+  markDirty();
+});
 
 function buildMaterialGrid() {
   const grid = $('material-grid');
@@ -493,8 +553,10 @@ function buildMaterialGrid() {
     btn.dataset.material = key;
     btn.innerHTML = `<canvas class="ball"></canvas><span class="mlabel">${mat.label}</span>`;
     btn.addEventListener('click', () => {
-      if (selectedId === 'base') doc.baseMaterial = key;
-      else { const sel = selectedLayer(); if (sel) sel.material = key; }
+      const target = matTarget();
+      if (!target) return;
+      target.material = key;
+      target.matParams = null; // switching material starts from its preset
       rebuildLayerList();
       syncMaterialGrid();
       markDirty();

@@ -8,21 +8,35 @@ export const SIZE = 2048;
 // channels instead of flat values. `ghost` layers are skipped in the paint
 // map entirely — the design exists only in reflections.
 // Per iRacing's docs the blue (clearcoat) channel should stay white unless
-// deliberately reduced — matte/satin pull it down for a flat film, everything
-// else keeps it at or near 255.
+// deliberately reduced. Every material is a *starting recipe* — per-layer
+// matParams (met/rough/clear + texture knobs) override these defaults.
 export const MATERIALS = {
-  gloss:    { label: 'Gloss',    r: 0,   g: 40,  b: 255 },
-  matte:    { label: 'Matte',    r: 0,   g: 230, b: 60  },
-  satin:    { label: 'Satin',    r: 0,   g: 120, b: 150 },
-  metallic: { label: 'Metallic', r: 180, g: 70,  b: 255 },
-  chrome:   { label: 'Chrome',   r: 255, g: 10,  b: 255 },
-  candy:    { label: 'Candy',    r: 220, g: 25,  b: 255 },
-  pearl:    { label: 'Pearl',    r: 190, g: 60,  b: 255 },
-  flake:    { label: 'Flake',    tex: 'flake'   },
-  brushed:  { label: 'Brushed',  tex: 'brushed' },
-  carbon:   { label: 'Carbon',   tex: 'carbon'  },
-  ghost:    { label: 'Ghost',    r: 255, g: 10,  b: 255, ghost: true },
+  gloss:    { label: 'Gloss',    met: 0,   rough: 40,  clear: 255 },
+  matte:    { label: 'Matte',    met: 0,   rough: 230, clear: 60  },
+  satin:    { label: 'Satin',    met: 0,   rough: 120, clear: 150 },
+  metallic: { label: 'Metallic', met: 180, rough: 70,  clear: 255 },
+  chrome:   { label: 'Chrome',   met: 255, rough: 10,  clear: 255 },
+  candy:    { label: 'Candy',    met: 220, rough: 25,  clear: 255 },
+  pearl:    { label: 'Pearl',    met: 190, rough: 60,  clear: 255 },
+  flake:    { label: 'Flake',    tex: 'flake',   met: 160, rough: 45,  clear: 255, density: 18, contrast: 100 },
+  brushed:  { label: 'Brushed',  tex: 'brushed', met: 205, rough: 110, clear: 130, scale: 2,  contrast: 100 },
+  carbon:   { label: 'Carbon',   tex: 'carbon',  met: 40,  rough: 85,  clear: 210, scale: 16, contrast: 100 },
+  ghost:    { label: 'Ghost',    met: 255, rough: 10, clear: 255, ghost: true },
 };
+
+// fresh copy of a material's editable parameters
+export function defaultParams(key) {
+  const m = MATERIALS[key] || MATERIALS.gloss;
+  const p = { met: m.met, rough: m.rough, clear: m.clear };
+  if (m.density !== undefined) p.density = m.density;
+  if (m.scale !== undefined) p.scale = m.scale;
+  if (m.contrast !== undefined) p.contrast = m.contrast;
+  return p;
+}
+
+export function resolveParams(materialKey, matParams) {
+  return { ...defaultParams(materialKey), ...(matParams || {}) };
+}
 
 // ---------- procedural spec micro-textures ----------
 
@@ -35,58 +49,66 @@ function mulberry32(seed) {
   };
 }
 
-const texCache = {};
+const clamp255 = (v) => Math.max(0, Math.min(255, v));
+const texCache = new Map();
 
-export function specTexture(key) {
-  if (texCache[key]) return texCache[key];
+export function specTexture(key, p) {
+  const cacheKey = `${key}|${p.met}|${p.rough}|${p.clear}|${p.scale || 0}|${p.density || 0}|${p.contrast || 0}`;
+  if (texCache.has(cacheKey)) return texCache.get(cacheKey);
+  if (texCache.size > 8) texCache.clear(); // slider scrubbing — keep memory flat
+
   const c = document.createElement('canvas');
   c.width = c.height = SIZE;
   const ctx = c.getContext('2d');
   const id = ctx.createImageData(SIZE, SIZE);
   const d = id.data;
   const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
+  const k = (p.contrast ?? 100) / 100;
 
   if (key === 'flake') {
-    // candy-style base with sparkle speckle: random pixels spike metallic
-    // and drop roughness, reading as metal flake under sim lighting
+    // sparkle speckle: random pixels spike metallic and drop roughness
+    const density = Math.max(0.01, (p.density ?? 18) / 100);
+    const thr = 1 - density;
     for (let i = 0; i < d.length; i += 4) {
       const f = rand();
-      const sparkle = f > 0.82 ? (f - 0.82) / 0.18 : 0;
-      d[i]     = 160 + sparkle * 95;  // metallic
-      d[i + 1] = 45 - sparkle * 35;   // roughness
-      d[i + 2] = 255;                 // clearcoat
+      const s = (f > thr ? (f - thr) / density : 0) * k;
+      d[i]     = clamp255(p.met + (255 - p.met) * s);
+      d[i + 1] = clamp255(p.rough * (1 - 0.85 * s));
+      d[i + 2] = p.clear;
       d[i + 3] = 255;
     }
   } else if (key === 'brushed') {
-    // horizontal grain: per-row roughness band plus per-pixel jitter
+    // grain bands of `scale` px plus per-pixel jitter in the roughness channel
+    const band = Math.max(1, Math.round(p.scale ?? 2));
+    let row = 0;
     for (let y = 0; y < SIZE; y++) {
-      const row = 90 + rand() * 70;
+      if (y % band === 0) row = (rand() - 0.5) * 140 * k;
       for (let x = 0; x < SIZE; x++) {
         const i = (y * SIZE + x) * 4;
-        const rough = row + (rand() - 0.5) * 40;
-        d[i]     = 205;
-        d[i + 1] = Math.max(20, Math.min(200, rough));
-        d[i + 2] = 130;
+        d[i]     = p.met;
+        d[i + 1] = clamp255(p.rough + row + (rand() - 0.5) * 40 * k);
+        d[i + 2] = p.clear;
         d[i + 3] = 255;
       }
     }
   } else if (key === 'carbon') {
     // 2x2 twill: alternating cells with opposing roughness gradients
-    const cell = 16;
+    const cell = Math.max(2, Math.round(p.scale ?? 16));
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) {
         const i = (y * SIZE + x) * 4;
         const weave = ((Math.floor(x / cell) + Math.floor(y / cell)) % 2) === 0;
         const fx = (x % cell) / cell;
-        d[i]     = 40;
-        d[i + 1] = weave ? 50 + fx * 50 : 130 - fx * 50;
-        d[i + 2] = 210;
+        const swing = weave ? (-35 + fx * 70) : (35 - fx * 70);
+        d[i]     = p.met;
+        d[i + 1] = clamp255(p.rough + swing * k);
+        d[i + 2] = p.clear;
         d[i + 3] = 255;
       }
     }
   }
   ctx.putImageData(id, 0, 0);
-  texCache[key] = c;
+  texCache.set(cacheKey, c);
   return c;
 }
 
@@ -98,6 +120,7 @@ export function createDoc() {
     name: 'untitled livery',
     baseColor: '#1a6cff',
     baseMaterial: 'gloss',
+    baseMatParams: null,
     layers: [],          // bottom → top; image layers only
     template: null,      // { img, src } — viewport reference only
     templateOpacity: 0.75,
@@ -190,11 +213,12 @@ export function renderPaint(doc) {
 export function renderSpec(doc) {
   const ctx = specCanvas.getContext('2d');
   const base = MATERIALS[doc.baseMaterial] || MATERIALS.gloss;
+  const baseP = resolveParams(doc.baseMaterial, doc.baseMatParams);
   ctx.clearRect(0, 0, SIZE, SIZE);
   if (base.tex) {
-    ctx.drawImage(specTexture(base.tex), 0, 0);
+    ctx.drawImage(specTexture(base.tex, baseP), 0, 0);
   } else {
-    ctx.fillStyle = `rgb(${base.r},${base.g},${base.b})`;
+    ctx.fillStyle = `rgb(${baseP.met},${baseP.rough},${baseP.clear})`;
     ctx.fillRect(0, 0, SIZE, SIZE);
   }
 
@@ -202,6 +226,7 @@ export function renderSpec(doc) {
   for (const layer of doc.layers) {
     if (!layer.visible) continue;
     const mat = MATERIALS[layer.material] || MATERIALS.gloss;
+    const p = resolveParams(layer.material, layer.matParams);
     // paint the layer's silhouette, then fill it with the material —
     // flat channel values, or a procedural micro-texture for tex materials
     sctx.clearRect(0, 0, SIZE, SIZE);
@@ -209,9 +234,9 @@ export function renderSpec(doc) {
     sctx.save();
     sctx.globalCompositeOperation = 'source-in';
     if (mat.tex) {
-      sctx.drawImage(specTexture(mat.tex), 0, 0);
+      sctx.drawImage(specTexture(mat.tex, p), 0, 0);
     } else {
-      sctx.fillStyle = `rgb(${mat.r},${mat.g},${mat.b})`;
+      sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
       sctx.fillRect(0, 0, SIZE, SIZE);
     }
     sctx.restore();
@@ -320,6 +345,7 @@ export function serializeDoc(doc) {
     name: doc.name,
     baseColor: doc.baseColor,
     baseMaterial: doc.baseMaterial,
+    baseMatParams: doc.baseMatParams || null,
     templateOpacity: doc.templateOpacity,
     templateColor: doc.templateColor,
     templateBold: doc.templateBold,
@@ -327,6 +353,7 @@ export function serializeDoc(doc) {
     layers: doc.layers.map(l => ({
       id: l.id, type: l.type, name: l.name,
       visible: l.visible, opacity: l.opacity, material: l.material,
+      matParams: l.matParams || null,
       src: l.src,
       x: l.x, y: l.y, scale: l.scale, rotation: l.rotation,
       flipH: l.flipH, flipV: l.flipV,
@@ -348,6 +375,7 @@ export async function deserializeDoc(data) {
   doc.name = data.name || doc.name;
   doc.baseColor = data.baseColor || doc.baseColor;
   doc.baseMaterial = data.baseMaterial || doc.baseMaterial;
+  doc.baseMatParams = data.baseMatParams || null;
   doc.templateOpacity = data.templateOpacity ?? doc.templateOpacity;
   doc.templateColor = data.templateColor || doc.templateColor;
   doc.templateBold = data.templateBold ?? doc.templateBold;
@@ -365,6 +393,7 @@ export async function deserializeDoc(data) {
         name: l.name || 'image',
         visible: l.visible !== false, opacity: l.opacity ?? 1,
         material: l.material || 'gloss',
+        matParams: l.matParams || null,
         img, src: l.src,
         x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
         scale: l.scale ?? 1, rotation: l.rotation ?? 0,

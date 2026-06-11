@@ -2,15 +2,17 @@
 // the material's spec channel values and the current paint color, so the
 // picker shows (approximately) what the finish does to *your* color.
 
-import { MATERIALS, specTexture } from './engine.js';
+import { MATERIALS, specTexture, resolveParams } from './engine.js';
 
 const BALL = 56; // canvas px — swatches display at 28 CSS px (2x for sharpness)
 
 // Per-material 56² spec sample: flat channel values, or the procedural
 // micro-texture downsampled with nearest-neighbour so flake speckle survives.
-const specSamples = {};
-function specSample(key) {
-  if (specSamples[key]) return specSamples[key];
+const specSamples = new Map();
+function specSample(key, p) {
+  const cacheKey = `${key}|${p.met}|${p.rough}|${p.clear}|${p.scale || 0}|${p.density || 0}|${p.contrast || 0}`;
+  if (specSamples.has(cacheKey)) return specSamples.get(cacheKey);
+  if (specSamples.size > 24) specSamples.clear();
   const mat = MATERIALS[key];
   const c = document.createElement('canvas');
   c.width = c.height = BALL;
@@ -18,13 +20,14 @@ function specSample(key) {
   if (mat.tex) {
     ctx.imageSmoothingEnabled = false;
     // sample a small crop so per-pixel detail isn't averaged away
-    ctx.drawImage(specTexture(mat.tex), 0, 0, BALL * 4, BALL * 4, 0, 0, BALL, BALL);
+    ctx.drawImage(specTexture(mat.tex, p), 0, 0, BALL * 4, BALL * 4, 0, 0, BALL, BALL);
   } else {
-    ctx.fillStyle = `rgb(${mat.r},${mat.g},${mat.b})`;
+    ctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
     ctx.fillRect(0, 0, BALL, BALL);
   }
-  specSamples[key] = ctx.getImageData(0, 0, BALL, BALL).data;
-  return specSamples[key];
+  const data = ctx.getImageData(0, 0, BALL, BALL).data;
+  specSamples.set(cacheKey, data);
+  return data;
 }
 
 function hexToRgb(hex) {
@@ -43,12 +46,14 @@ function normalize(v) {
   return [v[0] / len, v[1] / len, v[2] / len];
 }
 
-export function renderBall(canvas, materialKey, albedoHex) {
+// `params` overrides the material's default recipe (per-layer fine-tuning);
+// pass null to render the preset.
+export function renderBall(canvas, materialKey, albedoHex, params = null) {
   canvas.width = canvas.height = BALL;
   const ctx = canvas.getContext('2d');
   const out = ctx.createImageData(BALL, BALL);
   const d = out.data;
-  const spec = specSample(materialKey);
+  const spec = specSample(materialKey, params || resolveParams(materialKey, null));
   const albedo = hexToRgb(albedoHex);
   const ghost = !!MATERIALS[materialKey].ghost;
   const R = BALL / 2 - 1;

@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.10</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.11</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -149,7 +149,16 @@
     <section class="panel-block" id="inspector-material" hidden>
       <h3 class="sub-title">Material <span class="hint-inline">→ spec map</span></h3>
       <div class="material-grid" id="material-grid"></div>
-      <p class="hint">Materials are baked into the spec map — toggle <b>Spec view</b> to inspect it. <b>Flake/Brushed/Carbon</b> bake per-pixel micro-texture; <b>Ghost</b> layers are invisible in the paint and appear only in reflections. Verify finishes in the iRacing showroom.</p>
+      <h3 class="sub-title">Fine-tune <span class="title-actions"><button id="tune-reset" class="sm-btn" title="Back to this material's preset values">Reset</button></span></h3>
+      <div id="material-tune">
+        <div class="slider-row"><label for="tune-met">Metallic</label><input id="tune-met" type="range" min="0" max="255"><span class="mono" id="tune-met-val"></span></div>
+        <div class="slider-row"><label for="tune-rough">Rough</label><input id="tune-rough" type="range" min="0" max="255"><span class="mono" id="tune-rough-val"></span></div>
+        <div class="slider-row"><label for="tune-clear">Clearcoat</label><input id="tune-clear" type="range" min="0" max="255"><span class="mono" id="tune-clear-val"></span></div>
+        <div class="slider-row" id="tune-density-row"><label for="tune-density">Density</label><input id="tune-density" type="range" min="1" max="60"><span class="mono" id="tune-density-val"></span></div>
+        <div class="slider-row" id="tune-scale-row"><label for="tune-scale">Scale</label><input id="tune-scale" type="range" min="1" max="64"><span class="mono" id="tune-scale-val"></span></div>
+        <div class="slider-row" id="tune-contrast-row"><label for="tune-contrast">Contrast</label><input id="tune-contrast" type="range" min="0" max="200"><span class="mono" id="tune-contrast-val"></span></div>
+      </div>
+      <p class="hint">Materials are baked into the spec map — toggle <b>Spec view</b> to inspect it, or <b>Shine</b> to watch the finish react to light. Tuned values save with the project; verify in the iRacing showroom.</p>
     </section>
 
     <section class="panel-block" id="inspector-basecoat" hidden>
