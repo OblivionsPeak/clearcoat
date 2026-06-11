@@ -80,3 +80,25 @@ export async function writeFileToFolder(dirHandle, filename, blob) {
   await writable.write(blob);
   await writable.close();
 }
+
+// Returns the File or null if it doesn't exist.
+export async function readFileFromFolder(dirHandle, filename) {
+  try {
+    const fh = await dirHandle.getFileHandle(filename);
+    return await fh.getFile();
+  } catch {
+    return null;
+  }
+}
+
+export async function getBackupDir(dirHandle, create = false) {
+  try {
+    return await dirHandle.getDirectoryHandle('clearcoat-backup', { create });
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteFromFolder(dirHandle, filename) {
+  try { await dirHandle.removeEntry(filename); } catch { /* already gone */ }
+}

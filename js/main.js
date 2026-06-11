@@ -3,7 +3,7 @@ import {
   hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
   templateOverlay,
 } from './engine.js';
-import { canvasToTGA } from './tga.js';
+import { canvasToTGA, tgaToCanvas } from './tga.js';
 import { psdToTemplate } from './psd.js';
 import { renderBall, layerAlbedo } from './shaderball.js';
 import { lightSweepSupported, lightSweepFrame } from './lightsweep.js';
@@ -778,9 +778,11 @@ async function refreshFsStatus() {
   if (handle) {
     $('status-fs').textContent = '📁 ' + handle.name;
     $('btn-save-iracing').disabled = false;
+    refreshRestoreButton(handle, $('custid').value.trim()).catch(() => {});
   } else {
     $('status-fs').textContent = 'no folder linked';
     $('btn-save-iracing').disabled = true;
+    $('btn-restore-original').hidden = true;
   }
 }
 
@@ -792,24 +794,122 @@ $('btn-link-folder').addEventListener('click', async () => {
   refreshFsStatus();
 });
 
-$('btn-save-iracing').addEventListener('click', async () => {
+function paintFilenames(custid) {
+  return [`car_${custid}.tga`, `car_spec_${custid}.tga`];
+}
+
+function validCustid() {
   const custid = $('custid').value.trim();
   if (!/^\d+$/.test(custid)) {
     status('Enter your numeric iRacing customer ID first.', 'err');
     $('custid').focus();
-    return;
+    return null;
   }
   persist.saveSetting('custid', custid).catch(() => {});
+  return custid;
+}
+
+// Snapshot whatever is currently in the folder (e.g. your Trading Paints
+// livery) into clearcoat-backup/ — but only if no snapshot exists yet, so
+// repeated Clearcoat saves never overwrite the true original.
+async function backupOriginals(handle, custid) {
+  let backed = false;
+  for (const name of paintFilenames(custid)) {
+    const existing = await persist.readFileFromFolder(handle, name);
+    if (!existing) continue;
+    const bdir = await persist.getBackupDir(handle, true);
+    if (!bdir) return false;
+    if (await persist.readFileFromFolder(bdir, name)) continue; // original already kept
+    await persist.writeFileToFolder(bdir, name, existing);
+    backed = true;
+  }
+  return backed;
+}
+
+async function refreshRestoreButton(handle, custid) {
+  let hasBackup = false;
+  if (handle && custid) {
+    const bdir = await persist.getBackupDir(handle, false);
+    if (bdir) {
+      for (const name of paintFilenames(custid)) {
+        if (await persist.readFileFromFolder(bdir, name)) { hasBackup = true; break; }
+      }
+    }
+  }
+  $('btn-restore-original').hidden = !hasBackup;
+}
+
+$('btn-save-iracing').addEventListener('click', async () => {
+  const custid = validCustid();
+  if (!custid) return;
   try {
     const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
     if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); return; }
+    const backed = await backupOriginals(handle, custid);
     await persist.writeFileToFolder(handle, `car_${custid}.tga`, canvasToTGA(renderPaint(doc)));
     await persist.writeFileToFolder(handle, `car_spec_${custid}.tga`, canvasToTGA(renderSpec(doc), { alpha: true }));
     const btn = $('btn-save-iracing');
     btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
-    status(`Saved car_${custid}.tga + spec — check the showroom.`, 'ok');
+    status(backed
+      ? `Saved — your previous paint is kept in clearcoat-backup/. Use Restore to swap back.`
+      : `Saved car_${custid}.tga + spec — check the showroom.`, 'ok');
+    refreshRestoreButton(handle, custid);
   } catch (err) {
     status('Write failed: ' + err.message, 'err');
+  }
+});
+
+// Put the snapshotted originals back and clear the snapshot, so the next
+// Clearcoat save re-snapshots whatever is current.
+$('btn-restore-original').addEventListener('click', async () => {
+  const custid = validCustid();
+  if (!custid) return;
+  try {
+    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
+    if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); return; }
+    const bdir = await persist.getBackupDir(handle, false);
+    let restored = 0;
+    if (bdir) {
+      for (const name of paintFilenames(custid)) {
+        const f = await persist.readFileFromFolder(bdir, name);
+        if (!f) continue;
+        await persist.writeFileToFolder(handle, name, f);
+        await persist.deleteFromFolder(bdir, name);
+        restored++;
+      }
+    }
+    status(restored ? 'Original paint restored.' : 'No backup found to restore.', restored ? 'ok' : 'err');
+    refreshRestoreButton(handle, custid);
+  } catch (err) {
+    status('Restore failed: ' + err.message, 'err');
+  }
+});
+
+// Pull the livery currently in the folder (e.g. your Trading Paints paint)
+// into the editor as a full-sheet layer to design on top of.
+$('btn-import-paint').addEventListener('click', async () => {
+  const custid = validCustid();
+  if (!custid) return;
+  try {
+    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
+    if (!handle) { status('Link your paints folder first.', 'err'); return; }
+    // prefer the pristine backup if one exists (folder copy may be ours)
+    const bdir = await persist.getBackupDir(handle, false);
+    const name = `car_${custid}.tga`;
+    const file = (bdir && await persist.readFileFromFolder(bdir, name))
+              || await persist.readFileFromFolder(handle, name);
+    if (!file) { status(`No ${name} found in the linked folder.`, 'err'); return; }
+    const canvas = tgaToCanvas(await file.arrayBuffer());
+    const src = canvas.toDataURL('image/png');
+    const img = await loadImage(src);
+    const layer = createImageLayer(img, src, 'current paint');
+    layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = SIZE / img.width; // full sheet
+    doc.layers.push(layer);
+    selectLayer(layer.id);
+    markDirty();
+    status('Current car paint imported as a layer.', 'ok');
+  } catch (err) {
+    status('Import failed: ' + err.message, 'err');
   }
 });
 

@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.8</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.9</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -36,7 +36,8 @@
     <label class="custid-label" for="custid">iRacing ID</label>
     <input id="custid" class="custid" type="text" inputmode="numeric" placeholder="123456" spellcheck="false">
     <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints/<car> folder once — Clearcoat remembers it">Link Folder</button>
-    <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder — the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
+    <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder (your existing paint is snapshotted to clearcoat-backup/ first) — the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
+    <button id="btn-restore-original" class="tb-btn" title="Put the snapshotted original paint (e.g. your Trading Paints livery) back" hidden>Restore</button>
   </div>
 
   <div class="topbar-group divider">
@@ -81,6 +82,7 @@
         </span>
       </h2>
       <p class="hint" style="margin-top:0">Patterns tile the whole sheet — generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro ↗</a> (use its seamless export), then add them here.</p>
+      <button id="btn-import-paint" class="sm-btn wide" title="Read car_<id>.tga from the linked folder (your Trading Paints livery) into the editor as a full-sheet layer">Import current car paint…</button>
       <ul id="layer-list" class="layer-list" role="listbox" aria-label="Layers"></ul>
       <div class="basecoat-row" id="basecoat-row" title="Base coat — the bottom of every livery">
         <input type="color" id="basecoat-color" value="#1a6cff" aria-label="Base coat color">
