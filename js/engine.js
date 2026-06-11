@@ -4,12 +4,88 @@ export const SIZE = 2048;
 
 // iRacing PBR spec map convention (per official template PSDs):
 // R = metallic, G = roughness, B = clearcoat strength.
+// `tex` materials bake a procedural per-pixel micro-texture into the spec
+// channels instead of flat values. `ghost` layers are skipped in the paint
+// map entirely — the design exists only in reflections.
 export const MATERIALS = {
   gloss:    { label: 'Gloss',    r: 0,   g: 40,  b: 255 },
   matte:    { label: 'Matte',    r: 0,   g: 230, b: 0   },
+  satin:    { label: 'Satin',    r: 0,   g: 120, b: 90  },
   metallic: { label: 'Metallic', r: 180, g: 70,  b: 220 },
   chrome:   { label: 'Chrome',   r: 255, g: 10,  b: 255 },
+  candy:    { label: 'Candy',    r: 220, g: 25,  b: 255 },
+  pearl:    { label: 'Pearl',    r: 190, g: 60,  b: 255 },
+  flake:    { label: 'Flake',    tex: 'flake'   },
+  brushed:  { label: 'Brushed',  tex: 'brushed' },
+  carbon:   { label: 'Carbon',   tex: 'carbon'  },
+  ghost:    { label: 'Ghost',    r: 255, g: 10,  b: 255, ghost: true },
 };
+
+// ---------- procedural spec micro-textures ----------
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const texCache = {};
+
+export function specTexture(key) {
+  if (texCache[key]) return texCache[key];
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(SIZE, SIZE);
+  const d = id.data;
+  const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
+
+  if (key === 'flake') {
+    // candy-style base with sparkle speckle: random pixels spike metallic
+    // and drop roughness, reading as metal flake under sim lighting
+    for (let i = 0; i < d.length; i += 4) {
+      const f = rand();
+      const sparkle = f > 0.82 ? (f - 0.82) / 0.18 : 0;
+      d[i]     = 160 + sparkle * 95;  // metallic
+      d[i + 1] = 45 - sparkle * 35;   // roughness
+      d[i + 2] = 255;                 // clearcoat
+      d[i + 3] = 255;
+    }
+  } else if (key === 'brushed') {
+    // horizontal grain: per-row roughness band plus per-pixel jitter
+    for (let y = 0; y < SIZE; y++) {
+      const row = 90 + rand() * 70;
+      for (let x = 0; x < SIZE; x++) {
+        const i = (y * SIZE + x) * 4;
+        const rough = row + (rand() - 0.5) * 40;
+        d[i]     = 205;
+        d[i + 1] = Math.max(20, Math.min(200, rough));
+        d[i + 2] = 130;
+        d[i + 3] = 255;
+      }
+    }
+  } else if (key === 'carbon') {
+    // 2x2 twill: alternating cells with opposing roughness gradients
+    const cell = 16;
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const i = (y * SIZE + x) * 4;
+        const weave = ((Math.floor(x / cell) + Math.floor(y / cell)) % 2) === 0;
+        const fx = (x % cell) / cell;
+        d[i]     = 40;
+        d[i + 1] = weave ? 50 + fx * 50 : 130 - fx * 50;
+        d[i + 2] = 210;
+        d[i + 3] = 255;
+      }
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  texCache[key] = c;
+  return c;
+}
 
 let nextId = 1;
 export function newId() { return 'L' + (nextId++) + '-' + Date.now().toString(36); }
@@ -47,6 +123,24 @@ export function createImageLayer(img, src, name) {
   };
 }
 
+export function createPatternLayer(img, src, name) {
+  return {
+    id: newId(),
+    type: 'pattern',
+    name: name || 'pattern',
+    visible: true,
+    opacity: 1,
+    material: 'gloss',
+    img, src,
+    x: 0,          // tile offset
+    y: 0,
+    scale: 1,
+    rotation: 0,
+    flipH: false,
+    flipV: false,
+  };
+}
+
 // ---------- compositing ----------
 
 const paintCanvas = document.createElement('canvas');
@@ -59,10 +153,21 @@ scratch.width = scratch.height = SIZE;
 function drawLayer(ctx, layer) {
   ctx.save();
   ctx.globalAlpha = layer.opacity;
-  ctx.translate(layer.x, layer.y);
-  ctx.rotate(layer.rotation * Math.PI / 180);
-  ctx.scale(layer.scale * (layer.flipH ? -1 : 1), layer.scale * (layer.flipV ? -1 : 1));
-  ctx.drawImage(layer.img, -layer.img.width / 2, -layer.img.height / 2);
+  if (layer.type === 'pattern') {
+    // tiling fill across the whole sheet (seamless textures, e.g. SimTex Pro)
+    const pat = ctx.createPattern(layer.img, 'repeat');
+    pat.setTransform(new DOMMatrix()
+      .translate(layer.x, layer.y)
+      .rotate(layer.rotation)
+      .scale(layer.scale * (layer.flipH ? -1 : 1), layer.scale * (layer.flipV ? -1 : 1)));
+    ctx.fillStyle = pat;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+  } else {
+    ctx.translate(layer.x, layer.y);
+    ctx.rotate(layer.rotation * Math.PI / 180);
+    ctx.scale(layer.scale * (layer.flipH ? -1 : 1), layer.scale * (layer.flipV ? -1 : 1));
+    ctx.drawImage(layer.img, -layer.img.width / 2, -layer.img.height / 2);
+  }
   ctx.restore();
 }
 
@@ -73,6 +178,7 @@ export function renderPaint(doc) {
   ctx.fillRect(0, 0, SIZE, SIZE);
   for (const layer of doc.layers) {
     if (!layer.visible) continue;
+    if ((MATERIALS[layer.material] || {}).ghost) continue; // spec-only layer
     drawLayer(ctx, layer);
   }
   return paintCanvas;
@@ -82,20 +188,29 @@ export function renderSpec(doc) {
   const ctx = specCanvas.getContext('2d');
   const base = MATERIALS[doc.baseMaterial] || MATERIALS.gloss;
   ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.fillStyle = `rgb(${base.r},${base.g},${base.b})`;
-  ctx.fillRect(0, 0, SIZE, SIZE);
+  if (base.tex) {
+    ctx.drawImage(specTexture(base.tex), 0, 0);
+  } else {
+    ctx.fillStyle = `rgb(${base.r},${base.g},${base.b})`;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+  }
 
   const sctx = scratch.getContext('2d');
   for (const layer of doc.layers) {
     if (!layer.visible) continue;
     const mat = MATERIALS[layer.material] || MATERIALS.gloss;
-    // paint the layer's silhouette in its material color, then stamp it on
+    // paint the layer's silhouette, then fill it with the material —
+    // flat channel values, or a procedural micro-texture for tex materials
     sctx.clearRect(0, 0, SIZE, SIZE);
     drawLayer(sctx, layer);
     sctx.save();
     sctx.globalCompositeOperation = 'source-in';
-    sctx.fillStyle = `rgb(${mat.r},${mat.g},${mat.b})`;
-    sctx.fillRect(0, 0, SIZE, SIZE);
+    if (mat.tex) {
+      sctx.drawImage(specTexture(mat.tex), 0, 0);
+    } else {
+      sctx.fillStyle = `rgb(${mat.r},${mat.g},${mat.b})`;
+      sctx.fillRect(0, 0, SIZE, SIZE);
+    }
     sctx.restore();
     ctx.drawImage(scratch, 0, 0);
   }
@@ -157,6 +272,7 @@ export function hitTest(doc, px, py) {
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
     if (!l.visible) continue;
+    if (l.type === 'pattern') continue; // full-sheet fills — select via layer panel
     const local = toLocal(l, px, py);
     if (Math.abs(local.x) <= l.img.width / 2 && Math.abs(local.y) <= l.img.height / 2) {
       return l;
@@ -179,6 +295,9 @@ export function toLocal(layer, px, py) {
 
 // corner positions of a layer in doc space (for selection box / handles)
 export function layerCorners(layer) {
+  if (layer.type === 'pattern') {
+    return [{ x: 0, y: 0 }, { x: SIZE, y: 0 }, { x: SIZE, y: SIZE }, { x: 0, y: SIZE }];
+  }
   const hw = layer.img.width / 2 * layer.scale;
   const hh = layer.img.height / 2 * layer.scale;
   const rad = layer.rotation * Math.PI / 180;
@@ -238,7 +357,9 @@ export async function deserializeDoc(data) {
     try {
       const img = await loadImage(l.src);
       doc.layers.push({
-        id: l.id || newId(), type: 'image', name: l.name || 'image',
+        id: l.id || newId(),
+        type: l.type === 'pattern' ? 'pattern' : 'image',
+        name: l.name || 'image',
         visible: l.visible !== false, opacity: l.opacity ?? 1,
         material: l.material || 'gloss',
         img, src: l.src,

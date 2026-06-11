@@ -454,8 +454,8 @@ input  { font-family: inherit; }
 /* material swatches */
 .material-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
 }
 .material-swatch {
   display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -468,7 +468,7 @@ input  { font-family: inherit; }
 .material-swatch:hover { border-color: var(--seam-bright); }
 .material-swatch.active { border-color: var(--orange); box-shadow: 0 0 0 1px var(--orange); }
 .material-swatch .ball {
-  width: 34px; height: 34px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
 }
 .material-swatch .mlabel {
   font-family: var(--font-mono);
@@ -485,6 +485,27 @@ input  { font-family: inherit; }
                  box-shadow: inset 0 0 8px rgba(255,255,255,.25); }
 .ball.chrome   { background: conic-gradient(from 210deg, #fff, #7d8aa0 25%, #fff 40%, #535f73 60%, #e8eef7 80%, #fff);
                  filter: saturate(.6); }
+.ball.satin    { background: radial-gradient(circle at 32% 28%, #cfd4dd 0 10%, #79818f 45%, #50586a 100%); }
+.ball.candy    { background: radial-gradient(circle at 32% 28%, #fff 0 6%, #ff8ca0 14%, #e3173d 45%, #6e0018 100%); }
+.ball.pearl    { background: radial-gradient(circle at 32% 28%, #fff 0 14%, #f6edff 35%, #d8e3f2 60%, #b9c6dd 85%, #c9b9d8 100%); }
+.ball.flake    {
+  background:
+    radial-gradient(circle at 70% 65%, rgba(255,255,255,.9) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 30% 70%, rgba(255,255,255,.8) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 55% 30%, rgba(255,255,255,.9) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 20% 35%, rgba(255,255,255,.7) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 32% 28%, #fff 0 6%, #9b5cff 35%, #3c1a78 100%);
+}
+.ball.brushed  { background: repeating-linear-gradient(180deg, #aeb6c2 0 1px, #6e7888 1px 3px); }
+.ball.carbon   {
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.12) 0 2px, transparent 2px 5px),
+    repeating-linear-gradient(-45deg, #14161a 0 3px, #2c3036 3px 6px);
+}
+.ball.ghost    {
+  background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.35) 0 10%, rgba(255,255,255,.08) 50%, transparent 100%);
+  border: 1.5px dashed var(--ink-faint);
+}
 
 /* ============ STATUS BAR ============ */
 

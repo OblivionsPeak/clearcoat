@@ -1,5 +1,5 @@
 import {
-  SIZE, MATERIALS, createDoc, createImageLayer, renderPaint, renderSpec,
+  SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, renderPaint, renderSpec,
   hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
   templateOverlay,
 } from './engine.js';
@@ -131,18 +131,21 @@ function draw() {
     vctx.stroke();
     vctx.setLineDash([]);
 
-    // scale handles at corners
-    vctx.fillStyle = '#ff4d00';
-    for (const p of corners) {
-      vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
-    }
+    // pattern layers fill the sheet — outline only, transform via inspector
+    if (sel.type !== 'pattern') {
+      // scale handles at corners
+      vctx.fillStyle = '#ff4d00';
+      for (const p of corners) {
+        vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
+      }
 
-    // rotate handle floating above top edge
-    const rot = rotateHandlePos(sel);
-    vctx.beginPath();
-    vctx.arc(rot.x, rot.y, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
-    vctx.fillStyle = '#2dd6c1';
-    vctx.fill();
+      // rotate handle floating above top edge
+      const rot = rotateHandlePos(sel);
+      vctx.beginPath();
+      vctx.arc(rot.x, rot.y, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
+      vctx.fillStyle = '#2dd6c1';
+      vctx.fill();
+    }
     vctx.restore();
   }
 }
@@ -162,7 +165,7 @@ let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan', ... }
 
 function handleAt(sx, sy) {
   const sel = selectedLayer();
-  if (!sel || !sel.visible) return null;
+  if (!sel || !sel.visible || sel.type === 'pattern') return null;
   const rot = rotateHandlePos(sel);
   if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'rotate' };
   const corners = layerCorners(sel).map(p => docToScreen(p.x, p.y));
@@ -301,16 +304,17 @@ async function fileToDataURL(file) {
   });
 }
 
-async function addImageLayerFromFile(file) {
+async function addImageLayerFromFile(file, asPattern = false) {
   try {
     const src = await fileToDataURL(file);
     const img = await loadImage(src);
-    const layer = createImageLayer(img, src, file.name.replace(/\.[^.]+$/, ''));
+    const name = file.name.replace(/\.[^.]+$/, '');
+    const layer = asPattern ? createPatternLayer(img, src, name) : createImageLayer(img, src, name);
     doc.layers.push(layer);
     selectLayer(layer.id);
     rebuildLayerList();
     markDirty();
-    status(`Added layer "${layer.name}"`, 'ok');
+    status(asPattern ? `Added tiling pattern "${layer.name}"` : `Added layer "${layer.name}"`, 'ok');
   } catch {
     status('Could not load that image.', 'err');
   }
@@ -572,6 +576,12 @@ $('file-image').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (file) await addImageLayerFromFile(file);
+});
+$('btn-add-pattern').addEventListener('click', () => $('file-pattern').click());
+$('file-pattern').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) await addImageLayerFromFile(file, true);
 });
 
 // ---------- HUD ----------
