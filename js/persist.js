@@ -102,3 +102,14 @@ export async function getBackupDir(dirHandle, create = false) {
 export async function deleteFromFolder(dirHandle, filename) {
   try { await dirHandle.removeEntry(filename); } catch { /* already gone */ }
 }
+
+// All file names in the folder (non-recursive).
+export async function listFolder(dirHandle) {
+  const names = [];
+  try {
+    for await (const entry of dirHandle.values()) {
+      if (entry.kind === 'file') names.push(entry.name);
+    }
+  } catch { /* permission revoked mid-iteration */ }
+  return names;
+}

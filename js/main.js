@@ -885,29 +885,74 @@ $('btn-restore-original').addEventListener('click', async () => {
   }
 });
 
+async function addTgaAsLayer(arrayBuffer, name) {
+  const canvas = tgaToCanvas(arrayBuffer);
+  const src = canvas.toDataURL('image/png');
+  const img = await loadImage(src);
+  const layer = createImageLayer(img, src, name);
+  layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = SIZE / img.width; // full sheet
+  doc.layers.push(layer);
+  selectLayer(layer.id);
+  markDirty();
+}
+
 // Pull the livery currently in the folder (e.g. your Trading Paints paint)
 // into the editor as a full-sheet layer to design on top of.
+// Trading Paints writes car_<id>.tga for Sim-Stamped Number paints but
+// car_num_<id>.tga for Custom Number paints — try both, then any car TGA,
+// then offer a manual file picker.
 $('btn-import-paint').addEventListener('click', async () => {
   const custid = validCustid();
   if (!custid) return;
   try {
     const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
     if (!handle) { status('Link your paints folder first.', 'err'); return; }
-    // prefer the pristine backup if one exists (folder copy may be ours)
     const bdir = await persist.getBackupDir(handle, false);
-    const name = `car_${custid}.tga`;
-    const file = (bdir && await persist.readFileFromFolder(bdir, name))
-              || await persist.readFileFromFolder(handle, name);
-    if (!file) { status(`No ${name} found in the linked folder.`, 'err'); return; }
-    const canvas = tgaToCanvas(await file.arrayBuffer());
-    const src = canvas.toDataURL('image/png');
-    const img = await loadImage(src);
-    const layer = createImageLayer(img, src, 'current paint');
-    layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = SIZE / img.width; // full sheet
-    doc.layers.push(layer);
-    selectLayer(layer.id);
-    markDirty();
-    status('Current car paint imported as a layer.', 'ok');
+
+    const candidates = [`car_${custid}.tga`, `car_num_${custid}.tga`];
+    let file = null, picked = null;
+    for (const name of candidates) {
+      // prefer the pristine backup if one exists (folder copy may be ours)
+      file = (bdir && await persist.readFileFromFolder(bdir, name))
+          || await persist.readFileFromFolder(handle, name);
+      if (file) { picked = name; break; }
+    }
+
+    if (!file) {
+      // fall back: any car-ish TGA in the folder, newest first
+      const tgas = (await persist.listFolder(handle)).filter(n => /\.tga$/i.test(n));
+      const carTgas = tgas.filter(n => /^car/i.test(n) && !/spec/i.test(n));
+      const pool = carTgas.length ? carTgas : tgas;
+      let newest = null;
+      for (const n of pool) {
+        const f = await persist.readFileFromFolder(handle, n);
+        if (f && (!newest || f.lastModified > newest.file.lastModified)) newest = { file: f, name: n };
+      }
+      if (newest) {
+        file = newest.file; picked = newest.name;
+      } else {
+        const all = await persist.listFolder(handle);
+        status(`No .tga in the linked folder (${all.length} files: ${all.slice(0, 4).join(', ')}${all.length > 4 ? '…' : ''}) — pick one manually.`, 'err');
+        $('file-tga').click(); // manual escape hatch
+        return;
+      }
+    }
+
+    await addTgaAsLayer(await file.arrayBuffer(), picked.replace(/\.tga$/i, ''));
+    status(`Imported ${picked} as a layer.`, 'ok');
+  } catch (err) {
+    status('Import failed: ' + err.message, 'err');
+  }
+});
+
+// manual TGA import (fallback, and useful on Firefox/Safari)
+$('file-tga').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    await addTgaAsLayer(await f.arrayBuffer(), f.name.replace(/\.tga$/i, ''));
+    status(`Imported ${f.name} as a layer.`, 'ok');
   } catch (err) {
     status('Import failed: ' + err.message, 'err');
   }
