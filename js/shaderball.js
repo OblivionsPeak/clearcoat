@@ -106,6 +106,7 @@ export function renderBall(canvas, materialKey, albedoHex, params = null) {
 // Average color of a layer image — what the ball uses as albedo for image
 // layers. Cached on the layer object.
 export function layerAlbedo(layer, fallback = '#9aa0ab') {
+  if (layer && layer.type === 'fill') return layer.color || fallback;
   if (!layer || !layer.img) return fallback;
   if (layer._albedo) return layer._albedo;
   try {

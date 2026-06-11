@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.13</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.14</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -78,7 +78,8 @@
       <h2 class="panel-title">Layers
         <span class="title-actions">
           <button id="btn-add-image" class="sm-btn" title="Add an image layer (logo, decal, artwork)">+ Image</button>
-          <button id="btn-add-pattern" class="sm-btn" title="Add a seamless texture as a tiling fill across the whole sheet">+ Pattern</button>
+          <button id="btn-add-pattern" class="sm-btn" title="Add a seamless texture as a tiling fill over a resizable region">+ Pattern</button>
+          <button id="btn-add-fill" class="sm-btn" title="Add a solid-color material patch — a resizable rectangle with its own color, material, and tuning (e.g. a pearl panel)">+ Fill</button>
         </span>
       </h2>
       <p class="hint" style="margin-top:0">Patterns tile a resizable region (default: the whole sheet) — drag its corners to cover just the hood, a stripe, etc. Generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro ↗</a> (use its seamless export), then add them here.</p>
@@ -124,6 +125,11 @@
     <section class="panel-block" id="inspector-layer" hidden>
       <h2 class="panel-title">Layer</h2>
       <input id="ins-name" class="ins-name" type="text" spellcheck="false" aria-label="Layer name">
+
+      <div class="slider-row" id="ins-fill-row" hidden>
+        <label for="ins-fill-color">Color</label>
+        <input id="ins-fill-color" type="color" value="#e8e6e1">
+      </div>
 
       <div class="slider-row">
         <label for="ins-opacity">Opacity</label>

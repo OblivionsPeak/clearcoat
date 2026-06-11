@@ -168,6 +168,24 @@ export function createPatternLayer(img, src, name) {
   };
 }
 
+// solid-color material patch — a resizable rectangle carrying its own color
+// and material, so finishes (pearl, flake…) can be placed without an image
+export function createFillLayer(color = '#e8e6e1') {
+  return {
+    id: newId(),
+    type: 'fill',
+    name: 'fill',
+    visible: true,
+    opacity: 1,
+    material: 'gloss',
+    color,
+    x: 0, y: 0, scale: 1, rotation: 0, flipH: false, flipV: false,
+    rx: SIZE / 2 - 300, ry: SIZE / 2 - 200, rw: 600, rh: 400,
+  };
+}
+
+export const isRegionLayer = (l) => l.type === 'pattern' || l.type === 'fill';
+
 // ---------- compositing ----------
 
 const paintCanvas = document.createElement('canvas');
@@ -180,8 +198,11 @@ scratch.width = scratch.height = SIZE;
 function drawLayer(ctx, layer) {
   ctx.save();
   ctx.globalAlpha = layer.opacity;
-  if (layer.type === 'pattern') {
-    // tiling fill across the whole sheet (seamless textures, e.g. SimTex Pro)
+  if (layer.type === 'fill') {
+    ctx.fillStyle = layer.color || '#ffffff';
+    ctx.fillRect(layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE);
+  } else if (layer.type === 'pattern') {
+    // tiling fill across a region (seamless textures, e.g. SimTex Pro)
     const pat = ctx.createPattern(layer.img, 'repeat');
     pat.setTransform(new DOMMatrix()
       .translate(layer.x, layer.y)
@@ -335,23 +356,29 @@ export function templateOverlay(doc) {
 
 // ---------- hit testing ----------
 
-// returns topmost layer at doc-space point, or null — image layers take
-// precedence over pattern regions so fills never block logo dragging
-export function hitTest(doc, px, py) {
+// all layers under a doc-space point, in selection-priority order: image
+// layers top-down first (so region fills never block logo dragging), then
+// pattern/fill regions top-down
+export function hitTestAll(doc, px, py) {
+  const hits = [];
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
-    if (!l.visible || l.type === 'pattern') continue;
+    if (!l.visible || isRegionLayer(l)) continue;
     const local = toLocal(l, px, py);
     if (Math.abs(local.x) <= l.img.width / 2 && Math.abs(local.y) <= l.img.height / 2) {
-      return l;
+      hits.push(l);
     }
   }
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
-    if (!l.visible || l.type !== 'pattern') continue;
-    if (px >= l.rx && px <= l.rx + l.rw && py >= l.ry && py <= l.ry + l.rh) return l;
+    if (!l.visible || !isRegionLayer(l)) continue;
+    if (px >= l.rx && px <= l.rx + l.rw && py >= l.ry && py <= l.ry + l.rh) hits.push(l);
   }
-  return null;
+  return hits;
+}
+
+export function hitTest(doc, px, py) {
+  return hitTestAll(doc, px, py)[0] || null;
 }
 
 export function toLocal(layer, px, py) {
@@ -368,7 +395,7 @@ export function toLocal(layer, px, py) {
 
 // corner positions of a layer in doc space (for selection box / handles)
 export function layerCorners(layer) {
-  if (layer.type === 'pattern') {
+  if (isRegionLayer(layer)) {
     const { rx = 0, ry = 0, rw = SIZE, rh = SIZE } = layer;
     return [{ x: rx, y: ry }, { x: rx + rw, y: ry }, { x: rx + rw, y: ry + rh }, { x: rx, y: ry + rh }];
   }
@@ -401,6 +428,7 @@ export function serializeDoc(doc) {
       visible: l.visible, opacity: l.opacity, material: l.material,
       matParams: l.matParams || null,
       specBlend: l.specBlend || 'replace',
+      color: l.color,
       src: l.src,
       x: l.x, y: l.y, scale: l.scale, rotation: l.rotation,
       flipH: l.flipH, flipV: l.flipV,
@@ -434,6 +462,18 @@ export async function deserializeDoc(data) {
   }
   for (const l of (data.layers || [])) {
     try {
+      if (l.type === 'fill') {
+        doc.layers.push({
+          ...createFillLayer(l.color || '#e8e6e1'),
+          id: l.id || newId(), name: l.name || 'fill',
+          visible: l.visible !== false, opacity: l.opacity ?? 1,
+          material: l.material || 'gloss',
+          matParams: l.matParams || null,
+          specBlend: l.specBlend || 'replace',
+          rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
+        });
+        continue;
+      }
       const img = await loadImage(l.src);
       doc.layers.push({
         id: l.id || newId(),

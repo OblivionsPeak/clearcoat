@@ -1,6 +1,7 @@
 import {
-  SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, renderPaint, renderSpec,
-  hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
+  SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, createFillLayer,
+  renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
+  serializeDoc, deserializeDoc, loadImage,
   templateOverlay, defaultParams, resolveParams, mixHex,
 } from './engine.js';
 import { canvasToTGA, tgaToCanvas } from './tga.js';
@@ -152,8 +153,8 @@ function draw() {
       vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
     }
 
-    // rotate handle — image layers only (pattern regions stay axis-aligned)
-    if (sel.type !== 'pattern') {
+    // rotate handle — image layers only (regions stay axis-aligned)
+    if (!isRegionLayer(sel)) {
       const rot = rotateHandlePos(sel);
       vctx.beginPath();
       vctx.arc(rot.x, rot.y, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
@@ -180,14 +181,14 @@ let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan', ... }
 function handleAt(sx, sy) {
   const sel = selectedLayer();
   if (!sel || !sel.visible) return null;
-  if (sel.type !== 'pattern') {
+  if (!isRegionLayer(sel)) {
     const rot = rotateHandlePos(sel);
     if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'rotate' };
   }
   const corners = layerCorners(sel).map(p => docToScreen(p.x, p.y));
   for (let i = 0; i < 4; i++) {
     if (Math.abs(sx - corners[i].x) <= HANDLE_PX && Math.abs(sy - corners[i].y) <= HANDLE_PX) {
-      return { type: sel.type === 'pattern' ? 'region' : 'scale', corner: i };
+      return { type: isRegionLayer(sel) ? 'region' : 'scale', corner: i };
     }
   }
   return null;
@@ -229,10 +230,16 @@ viewport.addEventListener('pointerdown', (e) => {
   }
 
   const p = screenToDoc(sx, sy);
-  const hit = hitTest(doc, p.x, p.y);
+  const hits = hitTestAll(doc, p.x, p.y);
+  let hit = hits[0] || null;
+  // clicking again on an already-selected spot cycles down the stack
+  if (hits.length > 1) {
+    const idx = hits.findIndex(l => l.id === selectedId);
+    if (idx !== -1) hit = hits[(idx + 1) % hits.length];
+  }
   if (hit) {
     selectLayer(hit.id);
-    drag = hit.type === 'pattern'
+    drag = isRegionLayer(hit)
       ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry }
       : { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y };
   } else {
@@ -384,10 +391,17 @@ function rebuildLayerList() {
     li.className = 'layer-item' + (layer.id === selectedId ? ' selected' : '') + (layer.visible ? '' : ' hidden-layer');
     li.setAttribute('role', 'option');
 
-    const thumb = document.createElement('img');
-    thumb.className = 'thumb';
-    thumb.src = layer.src;
-    thumb.alt = '';
+    let thumb;
+    if (layer.type === 'fill') {
+      thumb = document.createElement('span');
+      thumb.className = 'thumb';
+      thumb.style.background = layer.color;
+    } else {
+      thumb = document.createElement('img');
+      thumb.className = 'thumb';
+      thumb.src = layer.src;
+      thumb.alt = '';
+    }
 
     const name = document.createElement('span');
     name.className = 'lname';
@@ -452,9 +466,10 @@ function duplicateSelected() {
     ...sel,
     id: 'L' + Math.random().toString(36).slice(2),
     name: sel.name + ' copy',
-    x: sel.x + 40, y: sel.y + 40,
     matParams: sel.matParams ? { ...sel.matParams } : null,
   };
+  if (isRegionLayer(sel)) { copy.rx = sel.rx + 40; copy.ry = sel.ry + 40; }
+  else { copy.x = sel.x + 40; copy.y = sel.y + 40; }
   doc.layers.push(copy);
   selectLayer(copy.id);
   markDirty();
@@ -474,6 +489,11 @@ function syncInspector() {
     if (document.activeElement !== $('ins-name')) $('ins-name').value = sel.name;
     $('ins-opacity').value = Math.round(sel.opacity * 100);
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
+    // fill layers: color picker instead of image transforms
+    $('ins-fill-row').hidden = sel.type !== 'fill';
+    document.querySelector('.xform-grid').hidden = sel.type === 'fill';
+    $('ins-flip-h').hidden = $('ins-flip-v').hidden = sel.type === 'fill';
+    if (sel.type === 'fill') $('ins-fill-color').value = sel.color;
     for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation']]) {
       const el = $(id);
       if (document.activeElement !== el) {
@@ -764,6 +784,23 @@ $('file-image').addEventListener('change', async (e) => {
   e.target.value = '';
   if (file) await addImageLayerFromFile(file);
 });
+$('btn-add-fill').addEventListener('click', () => {
+  const layer = createFillLayer();
+  doc.layers.push(layer);
+  selectLayer(layer.id);
+  markDirty();
+  status('Fill added — drag its corners to size it, then pick a material.', 'ok');
+});
+
+$('ins-fill-color').addEventListener('input', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill') return;
+  sel.color = $('ins-fill-color').value;
+  rebuildLayerList();
+  syncMaterialGrid(); // shader balls re-shade with the new albedo
+  markDirty();
+});
+
 $('btn-add-pattern').addEventListener('click', () => $('file-pattern').click());
 $('file-pattern').addEventListener('change', async (e) => {
   const file = e.target.files[0];
