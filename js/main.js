@@ -1,6 +1,7 @@
 import {
   SIZE, MATERIALS, createDoc, createImageLayer, renderPaint, renderSpec,
   hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
+  templateOverlay,
 } from './engine.js';
 import { canvasToTGA } from './tga.js';
 import { psdToTemplate } from './psd.js';
@@ -105,12 +106,13 @@ function draw() {
   vctx.imageSmoothingQuality = 'high';
   vctx.drawImage(composite, 0, 0);
 
-  // template overlay (multiply makes white backgrounds vanish)
+  // template overlay — recolored linework, or multiply for 'original'
   if (doc.template && !specView && doc.templateOpacity > 0) {
+    const ov = templateOverlay(doc);
     vctx.save();
     vctx.globalAlpha = doc.templateOpacity;
-    vctx.globalCompositeOperation = 'multiply';
-    vctx.drawImage(doc.template.img, 0, 0, SIZE, SIZE);
+    if (ov.multiply) vctx.globalCompositeOperation = 'multiply';
+    vctx.drawImage(ov.img, 0, 0, SIZE, SIZE);
     vctx.restore();
   }
   vctx.restore();
@@ -525,6 +527,8 @@ $('file-template').addEventListener('change', async (e) => {
     doc.template = { img: await loadImage(src), src };
     $('btn-clear-template').hidden = false;
     $('template-opacity-row').hidden = false;
+    $('template-style-row').hidden = false;
+    syncTemplateStyle();
     markDirty();
   } catch (err) {
     status('Could not load template: ' + (err.message || 'unknown error'), 'err');
@@ -534,6 +538,25 @@ $('btn-clear-template').addEventListener('click', () => {
   doc.template = null;
   $('btn-clear-template').hidden = true;
   $('template-opacity-row').hidden = true;
+  $('template-style-row').hidden = true;
+  markDirty();
+});
+
+function syncTemplateStyle() {
+  document.querySelectorAll('.tpl-color').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tcolor === doc.templateColor);
+  });
+  $('template-bold').checked = doc.templateBold;
+}
+document.querySelectorAll('.tpl-color').forEach(btn => {
+  btn.addEventListener('click', () => {
+    doc.templateColor = btn.dataset.tcolor;
+    syncTemplateStyle();
+    markDirty();
+  });
+});
+$('template-bold').addEventListener('change', () => {
+  doc.templateBold = $('template-bold').checked;
   markDirty();
 });
 $('template-opacity').addEventListener('input', () => {
@@ -614,8 +637,10 @@ function afterDocLoad() {
   $('project-name').value = doc.name;
   $('btn-clear-template').hidden = !doc.template;
   $('template-opacity-row').hidden = !doc.template;
+  $('template-style-row').hidden = !doc.template;
   $('template-opacity').value = Math.round(doc.templateOpacity * 100);
   $('template-opacity-val').textContent = Math.round(doc.templateOpacity * 100) + '%';
+  syncTemplateStyle();
   $('basecoat-color').value = doc.baseColor;
   rebuildLayerList();
   syncInspector();

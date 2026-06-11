@@ -205,6 +205,32 @@ input  { font-family: inherit; }
 
 .template-row { display: flex; gap: 6px; }
 
+.tpl-style-row {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 10px;
+  font-size: 11px; color: var(--ink-dim);
+}
+.tpl-style-label { min-width: 46px; }
+.tpl-color {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--seam);
+  background: var(--c);
+  padding: 0;
+  transition: border-color .12s, transform .12s;
+}
+.tpl-color:hover { transform: scale(1.12); }
+.tpl-color.active { border-color: var(--orange); }
+.tpl-color.tpl-original {
+  width: auto; border-radius: 4px;
+  background: var(--panel-raise);
+  color: var(--ink-dim);
+  font-family: var(--font-mono); font-size: 9px;
+  padding: 3px 5px;
+}
+.tpl-bold { margin-left: auto; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.tpl-bold input { accent-color: var(--orange); }
+
 .slider-row {
   display: flex; align-items: center; gap: 8px;
   margin-top: 10px;

@@ -21,7 +21,9 @@ export function createDoc() {
     baseMaterial: 'gloss',
     layers: [],          // bottom → top; image layers only
     template: null,      // { img, src } — viewport reference only
-    templateOpacity: 0.55,
+    templateOpacity: 0.75,
+    templateColor: '#ffffff',   // recolor linework for contrast; 'original' = multiply as-is
+    templateBold: true,         // thicken 1px linework
   };
 }
 
@@ -100,6 +102,54 @@ export function renderSpec(doc) {
   return specCanvas;
 }
 
+// ---------- template overlay ----------
+
+// Converts the template image into a recolored line overlay: "ink" (distance
+// from white) becomes alpha, painted in the chosen color, optionally
+// thickened. Cached — recomputed only when template/color/bold change.
+let tplCache = { key: null, canvas: null };
+
+export function templateOverlay(doc) {
+  if (!doc.template) return null;
+  if (doc.templateColor === 'original') {
+    return { img: doc.template.img, multiply: true };
+  }
+  const key = `${doc.template.src.length}:${doc.templateColor}:${doc.templateBold}`;
+  if (tplCache.key === key) return { img: tplCache.canvas, multiply: false };
+
+  const img = doc.template.img;
+  const w = img.width, h = img.height;
+  const work = document.createElement('canvas');
+  work.width = w; work.height = h;
+  const wctx = work.getContext('2d');
+  wctx.drawImage(img, 0, 0);
+  const data = wctx.getImageData(0, 0, w, h);
+  const px = data.data;
+
+  const tint = doc.templateColor;
+  const tr = parseInt(tint.slice(1, 3), 16);
+  const tg = parseInt(tint.slice(3, 5), 16);
+  const tb = parseInt(tint.slice(5, 7), 16);
+  for (let i = 0; i < px.length; i += 4) {
+    // ink = how far the pixel is from pure white, scaled by its own alpha
+    const ink = (255 - Math.min(px[i], px[i + 1], px[i + 2])) * (px[i + 3] / 255);
+    px[i] = tr; px[i + 1] = tg; px[i + 2] = tb;
+    px[i + 3] = ink;
+  }
+  wctx.putImageData(data, 0, 0);
+
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const octx = out.getContext('2d');
+  const offsets = doc.templateBold
+    ? [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]]
+    : [[0, 0]];
+  for (const [dx, dy] of offsets) octx.drawImage(work, dx, dy);
+
+  tplCache = { key, canvas: out };
+  return { img: out, multiply: false };
+}
+
 // ---------- hit testing ----------
 
 // returns topmost layer at doc-space point, or null
@@ -149,6 +199,8 @@ export function serializeDoc(doc) {
     baseColor: doc.baseColor,
     baseMaterial: doc.baseMaterial,
     templateOpacity: doc.templateOpacity,
+    templateColor: doc.templateColor,
+    templateBold: doc.templateBold,
     template: doc.template ? doc.template.src : null,
     layers: doc.layers.map(l => ({
       id: l.id, type: l.type, name: l.name,
@@ -175,6 +227,8 @@ export async function deserializeDoc(data) {
   doc.baseColor = data.baseColor || doc.baseColor;
   doc.baseMaterial = data.baseMaterial || doc.baseMaterial;
   doc.templateOpacity = data.templateOpacity ?? doc.templateOpacity;
+  doc.templateColor = data.templateColor || doc.templateColor;
+  doc.templateBold = data.templateBold ?? doc.templateBold;
   if (data.template) {
     try {
       doc.template = { img: await loadImage(data.template), src: data.template };
