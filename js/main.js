@@ -414,6 +414,15 @@ function rebuildLayerList() {
     mat.className = 'lmat';
     mat.textContent = layer.material;
 
+    const dup = document.createElement('button');
+    dup.className = 'vis';
+    dup.title = 'Duplicate layer (Ctrl+D)';
+    dup.textContent = '⧉';
+    dup.addEventListener('click', (e) => {
+      e.stopPropagation();
+      duplicateLayer(layer);
+    });
+
     const lock = document.createElement('button');
     lock.className = 'vis' + (layer.locked ? ' locked' : '');
     lock.title = layer.locked ? 'Unlock layer (canvas clicks pass through it)' : 'Lock layer — clicks on the canvas pass through to layers beneath';
@@ -447,7 +456,7 @@ function rebuildLayerList() {
     down.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(layer, -1); });
     order.append(up, down);
 
-    li.append(thumb, name, mat, lock, vis, order);
+    li.append(thumb, name, mat, dup, lock, vis, order);
     li.addEventListener('click', () => selectLayer(layer.id));
     list.appendChild(li);
   });
@@ -474,20 +483,24 @@ function deleteSelected() {
   status('Layer deleted.');
 }
 
-function duplicateSelected() {
-  const sel = selectedLayer();
-  if (!sel) return;
+function duplicateLayer(layer) {
   const copy = {
-    ...sel,
+    ...layer,
     id: 'L' + Math.random().toString(36).slice(2),
-    name: sel.name + ' copy',
-    matParams: sel.matParams ? { ...sel.matParams } : null,
+    name: layer.name + ' copy',
+    locked: false, // a fresh copy is for editing
+    matParams: layer.matParams ? { ...layer.matParams } : null,
   };
-  if (isRegionLayer(sel)) { copy.rx = sel.rx + 40; copy.ry = sel.ry + 40; }
-  else { copy.x = sel.x + 40; copy.y = sel.y + 40; }
+  if (isRegionLayer(layer)) { copy.rx = layer.rx + 40; copy.ry = layer.ry + 40; }
+  else { copy.x = layer.x + 40; copy.y = layer.y + 40; }
   doc.layers.push(copy);
   selectLayer(copy.id);
   markDirty();
+}
+
+function duplicateSelected() {
+  const sel = selectedLayer();
+  if (sel) duplicateLayer(sel);
 }
 
 // ---------- inspector ----------
