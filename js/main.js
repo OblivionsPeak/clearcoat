@@ -3,6 +3,7 @@ import {
   hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
 } from './engine.js';
 import { canvasToTGA } from './tga.js';
+import { psdToTemplate } from './psd.js';
 import * as persist from './persist.js';
 
 // ---------- state ----------
@@ -509,14 +510,24 @@ $('file-template').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!file) return;
   try {
-    const src = await fileToDataURL(file);
+    let src;
+    if (/\.psd$/i.test(file.name)) {
+      status('Reading PSD — extracting wireframe…');
+      const { src: psdSrc, usedWireframe } = await psdToTemplate(await file.arrayBuffer());
+      src = psdSrc;
+      status(usedWireframe
+        ? 'Wireframe extracted from PSD.'
+        : 'PSD loaded (no wireframe layers found — using flattened composite).', 'ok');
+    } else {
+      src = await fileToDataURL(file);
+      status('Template loaded — shown as a multiply overlay.', 'ok');
+    }
     doc.template = { img: await loadImage(src), src };
     $('btn-clear-template').hidden = false;
     $('template-opacity-row').hidden = false;
     markDirty();
-    status('Template loaded — shown as a multiply overlay.', 'ok');
-  } catch {
-    status('Could not load template image.', 'err');
+  } catch (err) {
+    status('Could not load template: ' + (err.message || 'unknown error'), 'err');
   }
 });
 $('btn-clear-template').addEventListener('click', () => {

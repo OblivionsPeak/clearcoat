@@ -184,6 +184,8 @@ input  { font-family: inherit; }
   margin: 14px 0 8px;
 }
 .hint { font-size: 11px; line-height: 1.5; color: var(--ink-faint); margin-top: 8px; }
+.hint a { color: var(--cyan); text-decoration: none; }
+.hint a:hover { text-decoration: underline; }
 .hint-inline { font-size: 10px; color: var(--ink-faint); text-transform: none; letter-spacing: 0; }
 
 .sm-btn {

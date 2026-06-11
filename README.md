@@ -6,7 +6,7 @@ Photoshop-free iRacing livery editing in the browser, with **live preview on the
 
 ## How it works
 
-1. **Load a template** — grab the wireframe PNG for your car from iRacing's official template downloads and load it as a reference overlay (multiply-blended, never exported).
+1. **Load a template** — download your car's official template from [Trading Paints' template library](https://www.tradingpaints.com/cartemplates) (or in-sim via My Content → Car Manager → Download Template) and load the **PSD straight into Clearcoat** — it extracts the wireframe in the browser, no Photoshop needed. Plain PNG/JPG wireframes work too. The overlay is multiply-blended and never exported.
 2. **Build your livery in layers** — pick a base coat color, then drag-and-drop PNGs/JPGs/SVGs (sponsor logos, artwork) onto the canvas. Move, scale, rotate, flip, reorder, set opacity.
 3. **Pick materials, not spec maps** — every layer gets a finish (gloss / matte / metallic / chrome). Clearcoat bakes the iRacing spec map for you. Toggle **Spec view** to inspect it.
 4. **Save to iRacing** — link your `Documents\iRacing\paints\<car>\` folder once (Chrome/Edge), enter your customer ID, and hit **Save to iRacing**. Keep the sim showroom open on a second monitor: it reloads `car_<custid>.tga` automatically when the file changes. Edit → save → see it on the car.
@@ -18,7 +18,7 @@ No install, no backend, no account. Everything runs client-side; projects autosa
 | Output | Format |
 |---|---|
 | Car paint | `car_<custid>.tga` — 2048×2048, 24-bit uncompressed TGA |
-| Spec map | `car_spec_<custid>.tga` — R = specular, G = glossiness, B = metallic |
+| Spec map | `car_spec_<custid>.tga` — R = metallic, G = roughness, B = clearcoat (iRacing PBR convention) |
 | Portable | PNG download (e.g. for Trading Paints upload) |
 
 ## Browser support

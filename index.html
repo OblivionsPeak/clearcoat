@@ -52,7 +52,7 @@
     <section class="panel-block">
       <h2 class="panel-title">Template</h2>
       <div class="template-row">
-        <button id="btn-load-template" class="sm-btn wide">Load wireframe…</button>
+        <button id="btn-load-template" class="sm-btn wide">Load template (PSD/PNG)…</button>
         <button id="btn-clear-template" class="sm-btn icon" title="Remove template" hidden>✕</button>
       </div>
       <div class="slider-row" id="template-opacity-row" hidden>
@@ -60,7 +60,8 @@
         <input id="template-opacity" type="range" min="0" max="100" value="55">
         <span class="mono" id="template-opacity-val">55%</span>
       </div>
-      <p class="hint">The wireframe is shown for reference only — it is never exported.</p>
+      <p class="hint">Load your car's official iRacing template <b>PSD</b> directly — Clearcoat extracts the wireframe for you. PNG/JPG work too. Shown for reference only, never exported.</p>
+      <p class="hint"><a href="https://www.tradingpaints.com/cartemplates" target="_blank" rel="noopener">Get your car's template ↗</a> (or in-sim: My Content → Car Manager → Download Template)</p>
     </section>
 
     <section class="panel-block grow">
@@ -152,7 +153,7 @@
 </footer>
 
 <input type="file" id="file-image" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
-<input type="file" id="file-template" accept="image/png,image/jpeg,image/webp" hidden>
+<input type="file" id="file-template" accept=".psd,image/png,image/jpeg,image/webp,image/vnd.adobe.photoshop" hidden>
 <input type="file" id="file-project" accept=".json,application/json" hidden>
 
 <script type="module" src="js/main.js"></script>

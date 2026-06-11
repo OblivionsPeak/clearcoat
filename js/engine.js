@@ -2,12 +2,13 @@
 
 export const SIZE = 2048;
 
-// iRacing spec map convention: R = specular intensity, G = glossiness, B = metallic.
+// iRacing PBR spec map convention (per official template PSDs):
+// R = metallic, G = roughness, B = clearcoat strength.
 export const MATERIALS = {
-  gloss:    { label: 'Gloss',    r: 130, g: 200, b: 0   },
-  matte:    { label: 'Matte',    r: 40,  g: 40,  b: 0   },
-  metallic: { label: 'Metallic', r: 170, g: 210, b: 160 },
-  chrome:   { label: 'Chrome',   r: 255, g: 255, b: 255 },
+  gloss:    { label: 'Gloss',    r: 0,   g: 40,  b: 255 },
+  matte:    { label: 'Matte',    r: 0,   g: 230, b: 0   },
+  metallic: { label: 'Metallic', r: 180, g: 70,  b: 220 },
+  chrome:   { label: 'Chrome',   r: 255, g: 10,  b: 255 },
 };
 
 let nextId = 1;
