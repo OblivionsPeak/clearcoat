@@ -237,7 +237,8 @@ input  { font-family: inherit; }
   font-size: 11px; color: var(--ink-dim);
 }
 .slider-row label { min-width: 46px; }
-.slider-row input[type=range] { flex: 1; accent-color: var(--orange); }
+.slider-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--orange); }
+.slider-row .tune-num { flex: none; }
 .slider-row .mono { min-width: 38px; text-align: right; font-size: 11px; }
 .slider-row input[type=color] {
   width: 42px; height: 26px;
