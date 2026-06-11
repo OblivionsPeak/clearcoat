@@ -7,11 +7,14 @@ export const SIZE = 2048;
 // `tex` materials bake a procedural per-pixel micro-texture into the spec
 // channels instead of flat values. `ghost` layers are skipped in the paint
 // map entirely — the design exists only in reflections.
+// Per iRacing's docs the blue (clearcoat) channel should stay white unless
+// deliberately reduced — matte/satin pull it down for a flat film, everything
+// else keeps it at or near 255.
 export const MATERIALS = {
   gloss:    { label: 'Gloss',    r: 0,   g: 40,  b: 255 },
-  matte:    { label: 'Matte',    r: 0,   g: 230, b: 0   },
-  satin:    { label: 'Satin',    r: 0,   g: 120, b: 90  },
-  metallic: { label: 'Metallic', r: 180, g: 70,  b: 220 },
+  matte:    { label: 'Matte',    r: 0,   g: 230, b: 60  },
+  satin:    { label: 'Satin',    r: 0,   g: 120, b: 150 },
+  metallic: { label: 'Metallic', r: 180, g: 70,  b: 255 },
   chrome:   { label: 'Chrome',   r: 255, g: 10,  b: 255 },
   candy:    { label: 'Candy',    r: 220, g: 25,  b: 255 },
   pearl:    { label: 'Pearl',    r: 190, g: 60,  b: 255 },

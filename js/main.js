@@ -761,7 +761,7 @@ $('btn-export-png').addEventListener('click', () => {
 
 $('btn-export-tga').addEventListener('click', () => {
   downloadBlob(canvasToTGA(renderPaint(doc)), safeName() + '.tga');
-  downloadBlob(canvasToTGA(renderSpec(doc)), safeName() + '_spec.tga');
+  downloadBlob(canvasToTGA(renderSpec(doc), { alpha: true }), safeName() + '_spec.tga');
   status('Paint + spec TGAs exported.', 'ok');
 });
 
@@ -804,7 +804,7 @@ $('btn-save-iracing').addEventListener('click', async () => {
     const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
     if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); return; }
     await persist.writeFileToFolder(handle, `car_${custid}.tga`, canvasToTGA(renderPaint(doc)));
-    await persist.writeFileToFolder(handle, `car_spec_${custid}.tga`, canvasToTGA(renderSpec(doc)));
+    await persist.writeFileToFolder(handle, `car_spec_${custid}.tga`, canvasToTGA(renderSpec(doc), { alpha: true }));
     const btn = $('btn-save-iracing');
     btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
     status(`Saved car_${custid}.tga + spec — check the showroom.`, 'ok');
