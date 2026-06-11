@@ -1,0 +1,740 @@
+import {
+  SIZE, MATERIALS, createDoc, createImageLayer, renderPaint, renderSpec,
+  hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
+} from './engine.js';
+import { canvasToTGA } from './tga.js';
+import * as persist from './persist.js';
+
+// ---------- state ----------
+
+let doc = createDoc();
+let selectedId = null;        // layer id, 'base', or null
+let specView = false;
+let dirty = true;             // composite needs re-render
+let autosaveTimer = null;
+
+const view = { x: 0, y: 0, zoom: 0.3 };   // doc → screen: screen = (doc + offset) * zoom
+
+const $ = (id) => document.getElementById(id);
+const viewport = $('viewport');
+const vctx = viewport.getContext('2d');
+
+// ---------- status bar ----------
+
+let statusTimer = null;
+function status(msg, cls = '') {
+  const el = $('status-msg');
+  el.textContent = msg;
+  el.className = cls;
+  clearTimeout(statusTimer);
+  if (cls) statusTimer = setTimeout(() => { el.className = ''; el.textContent = 'Ready.'; }, 4000);
+}
+
+// ---------- coordinate transforms ----------
+
+function screenToDoc(sx, sy) {
+  return { x: sx / view.zoom - view.x, y: sy / view.zoom - view.y };
+}
+function docToScreen(dx, dy) {
+  return { x: (dx + view.x) * view.zoom, y: (dy + view.y) * view.zoom };
+}
+
+function fitView() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  view.zoom = Math.min(w / SIZE, h / SIZE) * 0.92;
+  view.x = (w / view.zoom - SIZE) / 2;
+  view.y = (h / view.zoom - SIZE) / 2;
+  requestRender();
+}
+
+function setZoom(z, cx, cy) {
+  // keep doc point under (cx, cy) fixed
+  const before = screenToDoc(cx, cy);
+  view.zoom = Math.max(0.05, Math.min(8, z));
+  const after = screenToDoc(cx, cy);
+  view.x += after.x - before.x;
+  view.y += after.y - before.y;
+  requestRender();
+}
+
+// ---------- viewport rendering ----------
+
+let renderQueued = false;
+function requestRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; draw(); });
+}
+
+function markDirty() {
+  dirty = true;
+  requestRender();
+  scheduleAutosave();
+}
+
+function selectedLayer() {
+  return doc.layers.find(l => l.id === selectedId) || null;
+}
+
+const HANDLE_PX = 8;
+
+function draw() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  if (viewport.width !== w * devicePixelRatio || viewport.height !== h * devicePixelRatio) {
+    viewport.width = w * devicePixelRatio;
+    viewport.height = h * devicePixelRatio;
+  }
+  vctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  vctx.clearRect(0, 0, w, h);
+
+  const composite = specView ? renderSpec(doc) : renderPaint(doc);
+  dirty = false;
+
+  vctx.save();
+  vctx.scale(view.zoom, view.zoom);
+  vctx.translate(view.x, view.y);
+
+  // sheet shadow + paint
+  vctx.save();
+  vctx.shadowColor = 'rgba(0,0,0,.6)';
+  vctx.shadowBlur = 40 / view.zoom;
+  vctx.fillStyle = '#000';
+  vctx.fillRect(0, 0, SIZE, SIZE);
+  vctx.restore();
+  vctx.imageSmoothingQuality = 'high';
+  vctx.drawImage(composite, 0, 0);
+
+  // template overlay (multiply makes white backgrounds vanish)
+  if (doc.template && !specView && doc.templateOpacity > 0) {
+    vctx.save();
+    vctx.globalAlpha = doc.templateOpacity;
+    vctx.globalCompositeOperation = 'multiply';
+    vctx.drawImage(doc.template.img, 0, 0, SIZE, SIZE);
+    vctx.restore();
+  }
+  vctx.restore();
+
+  // selection box + handles (screen space for crisp lines)
+  const sel = selectedLayer();
+  if (sel && sel.visible) {
+    const corners = layerCorners(sel).map(p => docToScreen(p.x, p.y));
+    vctx.save();
+    vctx.strokeStyle = '#ff4d00';
+    vctx.lineWidth = 1.5;
+    vctx.setLineDash([6, 4]);
+    vctx.beginPath();
+    corners.forEach((p, i) => i ? vctx.lineTo(p.x, p.y) : vctx.moveTo(p.x, p.y));
+    vctx.closePath();
+    vctx.stroke();
+    vctx.setLineDash([]);
+
+    // scale handles at corners
+    vctx.fillStyle = '#ff4d00';
+    for (const p of corners) {
+      vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
+    }
+
+    // rotate handle floating above top edge
+    const rot = rotateHandlePos(sel);
+    vctx.beginPath();
+    vctx.arc(rot.x, rot.y, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
+    vctx.fillStyle = '#2dd6c1';
+    vctx.fill();
+    vctx.restore();
+  }
+}
+
+function rotateHandlePos(layer) {
+  const corners = layerCorners(layer).map(p => docToScreen(p.x, p.y));
+  const midTop = { x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2 };
+  const center = docToScreen(layer.x, layer.y);
+  const dx = midTop.x - center.x, dy = midTop.y - center.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: midTop.x + dx / len * 26, y: midTop.y + dy / len * 26 };
+}
+
+// ---------- pointer interaction ----------
+
+let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan', ... }
+
+function handleAt(sx, sy) {
+  const sel = selectedLayer();
+  if (!sel || !sel.visible) return null;
+  const rot = rotateHandlePos(sel);
+  if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'rotate' };
+  const corners = layerCorners(sel).map(p => docToScreen(p.x, p.y));
+  for (let i = 0; i < 4; i++) {
+    if (Math.abs(sx - corners[i].x) <= HANDLE_PX && Math.abs(sy - corners[i].y) <= HANDLE_PX) {
+      return { type: 'scale', corner: i };
+    }
+  }
+  return null;
+}
+
+viewport.addEventListener('pointerdown', (e) => {
+  viewport.setPointerCapture(e.pointerId);
+  const sx = e.offsetX, sy = e.offsetY;
+
+  if (e.button === 1 || e.button === 2 || spaceHeld) {
+    drag = { mode: 'pan', startX: sx, startY: sy, vx: view.x, vy: view.y };
+    viewport.classList.add('panning');
+    return;
+  }
+  if (e.button !== 0) return;
+
+  const handle = handleAt(sx, sy);
+  const sel = selectedLayer();
+  if (handle && sel) {
+    const p = screenToDoc(sx, sy);
+    if (handle.type === 'rotate') {
+      drag = {
+        mode: 'rotate', layer: sel,
+        startAngle: Math.atan2(p.y - sel.y, p.x - sel.x) * 180 / Math.PI - sel.rotation,
+      };
+    } else {
+      drag = {
+        mode: 'scale', layer: sel,
+        startDist: Math.hypot(p.x - sel.x, p.y - sel.y),
+        startScale: sel.scale,
+      };
+    }
+    return;
+  }
+
+  const p = screenToDoc(sx, sy);
+  const hit = hitTest(doc, p.x, p.y);
+  if (hit) {
+    selectLayer(hit.id);
+    drag = { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y };
+  } else {
+    selectLayer(null);
+    drag = { mode: 'pan', startX: sx, startY: sy, vx: view.x, vy: view.y };
+    viewport.classList.add('panning');
+  }
+});
+
+viewport.addEventListener('pointermove', (e) => {
+  const sx = e.offsetX, sy = e.offsetY;
+  const p = screenToDoc(sx, sy);
+  $('status-pos').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
+
+  if (!drag) {
+    viewport.classList.toggle('over-layer', !!handleAt(sx, sy) || !!hitTest(doc, p.x, p.y));
+    return;
+  }
+
+  switch (drag.mode) {
+    case 'pan':
+      view.x = drag.vx + (sx - drag.startX) / view.zoom;
+      view.y = drag.vy + (sy - drag.startY) / view.zoom;
+      requestRender();
+      break;
+    case 'move':
+      drag.layer.x = Math.round(p.x - drag.offX);
+      drag.layer.y = Math.round(p.y - drag.offY);
+      syncInspector();
+      markDirty();
+      break;
+    case 'scale': {
+      const dist = Math.hypot(p.x - drag.layer.x, p.y - drag.layer.y);
+      if (drag.startDist > 1) {
+        drag.layer.scale = Math.max(0.01, drag.startScale * dist / drag.startDist);
+        syncInspector();
+        markDirty();
+      }
+      break;
+    }
+    case 'rotate': {
+      let ang = Math.atan2(p.y - drag.layer.y, p.x - drag.layer.x) * 180 / Math.PI - drag.startAngle;
+      if (e.shiftKey) ang = Math.round(ang / 15) * 15;
+      drag.layer.rotation = Math.round(ang * 10) / 10;
+      syncInspector();
+      markDirty();
+      break;
+    }
+  }
+});
+
+window.addEventListener('pointerup', () => {
+  drag = null;
+  viewport.classList.remove('panning');
+});
+
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  setZoom(view.zoom * factor, e.offsetX, e.offsetY);
+  $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%';
+}, { passive: false });
+
+viewport.addEventListener('contextmenu', (e) => e.preventDefault());
+
+let spaceHeld = false;
+
+// ---------- drag & drop images ----------
+
+const wrap = $('viewport-wrap');
+let dragDepth = 0;
+wrap.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; $('drop-cue').hidden = false; });
+wrap.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop-cue').hidden = true; } });
+wrap.addEventListener('dragover', (e) => e.preventDefault());
+wrap.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  $('drop-cue').hidden = true;
+  for (const file of e.dataTransfer.files) {
+    if (file.type.startsWith('image/')) await addImageLayerFromFile(file);
+  }
+});
+
+// ---------- layers ----------
+
+async function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function addImageLayerFromFile(file) {
+  try {
+    const src = await fileToDataURL(file);
+    const img = await loadImage(src);
+    const layer = createImageLayer(img, src, file.name.replace(/\.[^.]+$/, ''));
+    doc.layers.push(layer);
+    selectLayer(layer.id);
+    rebuildLayerList();
+    markDirty();
+    status(`Added layer "${layer.name}"`, 'ok');
+  } catch {
+    status('Could not load that image.', 'err');
+  }
+}
+
+function selectLayer(id) {
+  selectedId = id;
+  rebuildLayerList();
+  syncInspector();
+  requestRender();
+}
+
+function rebuildLayerList() {
+  const list = $('layer-list');
+  list.innerHTML = '';
+  if (doc.layers.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'layer-list-empty';
+    li.textContent = 'No layers yet — add an image or drop one on the canvas.';
+    list.appendChild(li);
+  }
+  // top layer first in the panel
+  [...doc.layers].reverse().forEach((layer) => {
+    const li = document.createElement('li');
+    li.className = 'layer-item' + (layer.id === selectedId ? ' selected' : '') + (layer.visible ? '' : ' hidden-layer');
+    li.setAttribute('role', 'option');
+
+    const thumb = document.createElement('img');
+    thumb.className = 'thumb';
+    thumb.src = layer.src;
+    thumb.alt = '';
+
+    const name = document.createElement('span');
+    name.className = 'lname';
+    name.textContent = layer.name;
+
+    const mat = document.createElement('span');
+    mat.className = 'lmat';
+    mat.textContent = layer.material;
+
+    const vis = document.createElement('button');
+    vis.className = 'vis';
+    vis.title = layer.visible ? 'Hide layer' : 'Show layer';
+    vis.textContent = layer.visible ? '👁' : '–';
+    vis.addEventListener('click', (e) => {
+      e.stopPropagation();
+      layer.visible = !layer.visible;
+      rebuildLayerList();
+      markDirty();
+    });
+
+    const order = document.createElement('span');
+    order.className = 'order-btns';
+    const up = document.createElement('button');
+    up.textContent = '▲'; up.title = 'Bring forward';
+    up.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(layer, +1); });
+    const down = document.createElement('button');
+    down.textContent = '▼'; down.title = 'Send backward';
+    down.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(layer, -1); });
+    order.append(up, down);
+
+    li.append(thumb, name, mat, vis, order);
+    li.addEventListener('click', () => selectLayer(layer.id));
+    list.appendChild(li);
+  });
+
+  $('basecoat-row').classList.toggle('selected', selectedId === 'base');
+  $('basecoat-material-chip').textContent = doc.baseMaterial;
+}
+
+function moveLayer(layer, dir) {
+  const i = doc.layers.indexOf(layer);
+  const j = i + dir;
+  if (j < 0 || j >= doc.layers.length) return;
+  [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]];
+  rebuildLayerList();
+  markDirty();
+}
+
+function deleteSelected() {
+  const sel = selectedLayer();
+  if (!sel) return;
+  doc.layers = doc.layers.filter(l => l !== sel);
+  selectLayer(null);
+  markDirty();
+  status('Layer deleted.');
+}
+
+function duplicateSelected() {
+  const sel = selectedLayer();
+  if (!sel) return;
+  const copy = { ...sel, id: 'L' + Math.random().toString(36).slice(2), name: sel.name + ' copy', x: sel.x + 40, y: sel.y + 40 };
+  doc.layers.push(copy);
+  selectLayer(copy.id);
+  markDirty();
+}
+
+// ---------- inspector ----------
+
+function syncInspector() {
+  const sel = selectedLayer();
+  const isBase = selectedId === 'base';
+  $('inspector-empty').hidden = !!sel || isBase;
+  $('inspector-layer').hidden = !sel;
+  $('inspector-basecoat').hidden = !isBase;
+  $('inspector-material').hidden = !sel && !isBase;
+
+  if (sel) {
+    if (document.activeElement !== $('ins-name')) $('ins-name').value = sel.name;
+    $('ins-opacity').value = Math.round(sel.opacity * 100);
+    $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
+    for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation']]) {
+      const el = $(id);
+      if (document.activeElement !== el) {
+        el.value = prop === 'scale' ? sel[prop].toFixed(3) : Math.round(sel[prop] * 10) / 10;
+      }
+    }
+  }
+  if (isBase) {
+    $('ins-base-color').value = doc.baseColor;
+    $('ins-base-color-val').textContent = doc.baseColor.toUpperCase();
+  }
+  syncMaterialGrid();
+}
+
+function syncMaterialGrid() {
+  const current = selectedId === 'base' ? doc.baseMaterial : selectedLayer()?.material;
+  document.querySelectorAll('.material-swatch').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.material === current);
+  });
+}
+
+function buildMaterialGrid() {
+  const grid = $('material-grid');
+  for (const [key, mat] of Object.entries(MATERIALS)) {
+    const btn = document.createElement('button');
+    btn.className = 'material-swatch';
+    btn.dataset.material = key;
+    btn.innerHTML = `<span class="ball ${key}"></span><span class="mlabel">${mat.label}</span>`;
+    btn.addEventListener('click', () => {
+      if (selectedId === 'base') doc.baseMaterial = key;
+      else { const sel = selectedLayer(); if (sel) sel.material = key; }
+      rebuildLayerList();
+      syncMaterialGrid();
+      markDirty();
+    });
+    grid.appendChild(btn);
+  }
+}
+
+// inspector inputs
+$('ins-name').addEventListener('input', () => {
+  const sel = selectedLayer(); if (!sel) return;
+  sel.name = $('ins-name').value;
+  rebuildLayerList();
+  scheduleAutosave();
+});
+$('ins-opacity').addEventListener('input', () => {
+  const sel = selectedLayer(); if (!sel) return;
+  sel.opacity = $('ins-opacity').value / 100;
+  $('ins-opacity-val').textContent = $('ins-opacity').value + '%';
+  markDirty();
+});
+for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation']]) {
+  $(id).addEventListener('input', () => {
+    const sel = selectedLayer(); if (!sel) return;
+    const v = parseFloat($(id).value);
+    if (!Number.isFinite(v)) return;
+    sel[prop] = prop === 'scale' ? Math.max(0.01, v) : v;
+    markDirty();
+  });
+}
+$('ins-flip-h').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipH = !s.flipH; markDirty(); } });
+$('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipV = !s.flipV; markDirty(); } });
+$('ins-delete').addEventListener('click', deleteSelected);
+$('ins-duplicate').addEventListener('click', duplicateSelected);
+
+$('ins-base-color').addEventListener('input', () => {
+  doc.baseColor = $('ins-base-color').value;
+  $('basecoat-color').value = doc.baseColor;
+  $('ins-base-color-val').textContent = doc.baseColor.toUpperCase();
+  markDirty();
+});
+
+// base coat row
+$('basecoat-row').addEventListener('click', () => selectLayer('base'));
+$('basecoat-color').addEventListener('click', (e) => e.stopPropagation());
+$('basecoat-color').addEventListener('input', () => {
+  doc.baseColor = $('basecoat-color').value;
+  if (selectedId === 'base') syncInspector();
+  markDirty();
+});
+
+// ---------- template ----------
+
+$('btn-load-template').addEventListener('click', () => $('file-template').click());
+$('file-template').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const src = await fileToDataURL(file);
+    doc.template = { img: await loadImage(src), src };
+    $('btn-clear-template').hidden = false;
+    $('template-opacity-row').hidden = false;
+    markDirty();
+    status('Template loaded — shown as a multiply overlay.', 'ok');
+  } catch {
+    status('Could not load template image.', 'err');
+  }
+});
+$('btn-clear-template').addEventListener('click', () => {
+  doc.template = null;
+  $('btn-clear-template').hidden = true;
+  $('template-opacity-row').hidden = true;
+  markDirty();
+});
+$('template-opacity').addEventListener('input', () => {
+  doc.templateOpacity = $('template-opacity').value / 100;
+  $('template-opacity-val').textContent = $('template-opacity').value + '%';
+  markDirty();
+});
+
+// ---------- add image ----------
+
+$('btn-add-image').addEventListener('click', () => $('file-image').click());
+$('file-image').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) await addImageLayerFromFile(file);
+});
+
+// ---------- HUD ----------
+
+$('btn-fit').addEventListener('click', fitView);
+$('btn-zoom-in').addEventListener('click', () => { setZoom(view.zoom * 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2); $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%'; });
+$('btn-zoom-out').addEventListener('click', () => { setZoom(view.zoom / 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2); $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%'; });
+$('btn-spec-view').addEventListener('click', () => {
+  specView = !specView;
+  $('btn-spec-view').classList.toggle('active', specView);
+  requestRender();
+});
+
+// ---------- project save / open / new ----------
+
+$('project-name').addEventListener('input', () => {
+  doc.name = $('project-name').value;
+  scheduleAutosave();
+});
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function safeName() {
+  return (doc.name || 'livery').trim().replace(/[^\w\- ]+/g, '').replace(/\s+/g, '-').toLowerCase() || 'livery';
+}
+
+$('btn-save').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(serializeDoc(doc))], { type: 'application/json' });
+  downloadBlob(blob, safeName() + '.clearcoat.json');
+  status('Project saved.', 'ok');
+});
+
+$('btn-open').addEventListener('click', () => $('file-project').click());
+$('file-project').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    doc = await deserializeDoc(data);
+    afterDocLoad();
+    status(`Opened "${doc.name}".`, 'ok');
+  } catch {
+    status('That file is not a valid Clearcoat project.', 'err');
+  }
+});
+
+$('btn-new').addEventListener('click', () => {
+  if (doc.layers.length && !confirm('Start a new livery? Unsaved changes are kept only in autosave.')) return;
+  doc = createDoc();
+  afterDocLoad();
+  status('New project.');
+});
+
+function afterDocLoad() {
+  selectedId = null;
+  $('project-name').value = doc.name;
+  $('btn-clear-template').hidden = !doc.template;
+  $('template-opacity-row').hidden = !doc.template;
+  $('template-opacity').value = Math.round(doc.templateOpacity * 100);
+  $('template-opacity-val').textContent = Math.round(doc.templateOpacity * 100) + '%';
+  $('basecoat-color').value = doc.baseColor;
+  rebuildLayerList();
+  syncInspector();
+  fitView();
+  markDirty();
+}
+
+// ---------- autosave ----------
+
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async () => {
+    try {
+      await persist.saveAutosave(serializeDoc(doc));
+      $('status-autosave').textContent = 'autosaved ' + new Date().toLocaleTimeString();
+    } catch { /* quota or private mode — non-fatal */ }
+  }, 1200);
+}
+
+// ---------- exports ----------
+
+$('btn-export-png').addEventListener('click', () => {
+  renderPaint(doc).toBlob((blob) => {
+    downloadBlob(blob, safeName() + '.png');
+    status('PNG exported.', 'ok');
+  }, 'image/png');
+});
+
+$('btn-export-tga').addEventListener('click', () => {
+  downloadBlob(canvasToTGA(renderPaint(doc)), safeName() + '.tga');
+  downloadBlob(canvasToTGA(renderSpec(doc)), safeName() + '_spec.tga');
+  status('Paint + spec TGAs exported.', 'ok');
+});
+
+// ---------- File System Access: save into iRacing ----------
+
+async function refreshFsStatus() {
+  if (!persist.fsSupported()) {
+    $('status-fs').textContent = 'live save needs Chrome/Edge';
+    $('btn-link-folder').disabled = true;
+    $('btn-save-iracing').disabled = true;
+    return;
+  }
+  const handle = await persist.getPaintsFolder().catch(() => null);
+  if (handle) {
+    $('status-fs').textContent = '📁 ' + handle.name;
+    $('btn-save-iracing').disabled = false;
+  } else {
+    $('status-fs').textContent = 'no folder linked';
+    $('btn-save-iracing').disabled = true;
+  }
+}
+
+$('btn-link-folder').addEventListener('click', async () => {
+  try {
+    const handle = await persist.pickPaintsFolder();
+    status(`Linked folder "${handle.name}". Save to iRacing is live.`, 'ok');
+  } catch { /* user cancelled */ }
+  refreshFsStatus();
+});
+
+$('btn-save-iracing').addEventListener('click', async () => {
+  const custid = $('custid').value.trim();
+  if (!/^\d+$/.test(custid)) {
+    status('Enter your numeric iRacing customer ID first.', 'err');
+    $('custid').focus();
+    return;
+  }
+  persist.saveSetting('custid', custid).catch(() => {});
+  try {
+    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
+    if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); return; }
+    await persist.writeFileToFolder(handle, `car_${custid}.tga`, canvasToTGA(renderPaint(doc)));
+    await persist.writeFileToFolder(handle, `car_spec_${custid}.tga`, canvasToTGA(renderSpec(doc)));
+    const btn = $('btn-save-iracing');
+    btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
+    status(`Saved car_${custid}.tga + spec — check the showroom.`, 'ok');
+  } catch (err) {
+    status('Write failed: ' + err.message, 'err');
+  }
+});
+
+// ---------- keyboard ----------
+
+window.addEventListener('keydown', (e) => {
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  if (e.code === 'Space') { spaceHeld = true; e.preventDefault(); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
+  if (e.key === 'Escape') { selectLayer(null); return; }
+  if (e.key === 'f' || e.key === 'F') { fitView(); return; }
+  if (e.key === 's' || e.key === 'S') {
+    if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('btn-save').click(); return; }
+    $('btn-spec-view').click(); return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelected(); return; }
+
+  const sel = selectedLayer();
+  if (sel && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    if (e.key === 'ArrowUp') sel.y -= step;
+    if (e.key === 'ArrowDown') sel.y += step;
+    if (e.key === 'ArrowLeft') sel.x -= step;
+    if (e.key === 'ArrowRight') sel.x += step;
+    syncInspector();
+    markDirty();
+  }
+});
+window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceHeld = false; });
+
+window.addEventListener('resize', requestRender);
+
+// ---------- boot ----------
+
+(async function boot() {
+  buildMaterialGrid();
+
+  const savedCustid = await persist.loadSetting('custid').catch(() => null);
+  if (savedCustid) $('custid').value = savedCustid;
+
+  const auto = await persist.loadAutosave().catch(() => null);
+  if (auto && (auto.layers?.length || auto.template || auto.baseColor !== '#1a6cff')) {
+    try {
+      doc = await deserializeDoc(auto);
+      status('Restored autosaved project.');
+    } catch { /* corrupt autosave — start fresh */ }
+  }
+
+  afterDocLoad();
+  await refreshFsStatus();
+})();

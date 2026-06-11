@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clearcoat — iRacing Livery Workbench</title>
+<meta name="description" content="Photoshop-free iRacing livery editing with live preview on the real car. Layer editor, automatic spec maps, direct save into your iRacing paints folder.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Khand:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101114'/%3E%3Cpath d='M6 22 L14 8 H20 L12 22 Z' fill='%23ff4d00'/%3E%3Cpath d='M16 22 L24 8 H26 L18 22 Z' fill='%23e8e6e1'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="6" fill="#101114"/>
+      <path d="M6 22 L14 8 H20 L12 22 Z" fill="#ff4d00"/>
+      <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
+    </svg>
+    <span class="brand-name">CLEARCOAT</span>
+    <span class="brand-sub">livery workbench</span>
+  </div>
+
+  <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
+
+  <div class="topbar-group">
+    <button id="btn-new" class="tb-btn" title="New project">New</button>
+    <button id="btn-open" class="tb-btn" title="Open a .clearcoat.json project">Open</button>
+    <button id="btn-save" class="tb-btn" title="Download project as .clearcoat.json">Save</button>
+  </div>
+
+  <div class="topbar-group divider">
+    <label class="custid-label" for="custid">iRacing ID</label>
+    <input id="custid" class="custid" type="text" inputmode="numeric" placeholder="123456" spellcheck="false">
+    <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints/<car> folder once — Clearcoat remembers it">Link Folder</button>
+    <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder — the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
+  </div>
+
+  <div class="topbar-group divider">
+    <button id="btn-export-tga" class="tb-btn" title="Download paint + spec map as TGA">Export TGA</button>
+    <button id="btn-export-png" class="tb-btn" title="Download paint as PNG">Export PNG</button>
+  </div>
+</header>
+
+<main id="workspace">
+
+  <!-- ============ LEFT: LAYERS ============ -->
+  <aside id="panel-layers">
+    <section class="panel-block">
+      <h2 class="panel-title">Template</h2>
+      <div class="template-row">
+        <button id="btn-load-template" class="sm-btn wide">Load wireframe…</button>
+        <button id="btn-clear-template" class="sm-btn icon" title="Remove template" hidden>✕</button>
+      </div>
+      <div class="slider-row" id="template-opacity-row" hidden>
+        <label for="template-opacity">Overlay</label>
+        <input id="template-opacity" type="range" min="0" max="100" value="55">
+        <span class="mono" id="template-opacity-val">55%</span>
+      </div>
+      <p class="hint">The wireframe is shown for reference only — it is never exported.</p>
+    </section>
+
+    <section class="panel-block grow">
+      <h2 class="panel-title">Layers
+        <span class="title-actions">
+          <button id="btn-add-image" class="sm-btn" title="Add an image layer (logo, decal, artwork)">+ Image</button>
+        </span>
+      </h2>
+      <ul id="layer-list" class="layer-list" role="listbox" aria-label="Layers"></ul>
+      <div class="basecoat-row" id="basecoat-row" title="Base coat — the bottom of every livery">
+        <input type="color" id="basecoat-color" value="#1a6cff" aria-label="Base coat color">
+        <span class="basecoat-label">Base coat</span>
+        <span class="material-chip" id="basecoat-material-chip">gloss</span>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ============ CENTER: VIEWPORT ============ -->
+  <section id="viewport-wrap">
+    <canvas id="viewport"></canvas>
+    <div id="viewport-hud">
+      <button id="btn-fit" class="hud-btn" title="Fit to window (F)">Fit</button>
+      <button id="btn-zoom-out" class="hud-btn" title="Zoom out (-)">−</button>
+      <span id="zoom-readout" class="mono hud-readout">100%</span>
+      <button id="btn-zoom-in" class="hud-btn" title="Zoom in (+)">+</button>
+      <span class="hud-sep"></span>
+      <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
+    </div>
+    <div id="drop-cue" hidden><span>Drop image to add layer</span></div>
+  </section>
+
+  <!-- ============ RIGHT: INSPECTOR ============ -->
+  <aside id="panel-inspector">
+    <section class="panel-block" id="inspector-empty">
+      <h2 class="panel-title">Inspector</h2>
+      <p class="hint">Select a layer to edit it, or drop a PNG/JPG/SVG anywhere on the canvas to add one.</p>
+    </section>
+
+    <section class="panel-block" id="inspector-layer" hidden>
+      <h2 class="panel-title">Layer</h2>
+      <input id="ins-name" class="ins-name" type="text" spellcheck="false" aria-label="Layer name">
+
+      <div class="slider-row">
+        <label for="ins-opacity">Opacity</label>
+        <input id="ins-opacity" type="range" min="0" max="100" value="100">
+        <span class="mono" id="ins-opacity-val">100%</span>
+      </div>
+
+      <h3 class="sub-title">Transform</h3>
+      <div class="xform-grid">
+        <label>X <input id="ins-x" type="number" step="1" class="mono"></label>
+        <label>Y <input id="ins-y" type="number" step="1" class="mono"></label>
+        <label>Scale <input id="ins-scale" type="number" step="0.01" min="0.01" class="mono"></label>
+        <label>Rotate <input id="ins-rot" type="number" step="1" class="mono"></label>
+      </div>
+      <div class="btn-row">
+        <button id="ins-flip-h" class="sm-btn" title="Flip horizontally">Flip H</button>
+        <button id="ins-flip-v" class="sm-btn" title="Flip vertically">Flip V</button>
+        <button id="ins-duplicate" class="sm-btn" title="Duplicate layer (Ctrl+D)">Duplicate</button>
+        <button id="ins-delete" class="sm-btn danger" title="Delete layer (Del)">Delete</button>
+      </div>
+    </section>
+
+    <section class="panel-block" id="inspector-material" hidden>
+      <h3 class="sub-title">Material <span class="hint-inline">→ spec map</span></h3>
+      <div class="material-grid" id="material-grid"></div>
+      <p class="hint">Materials are baked into the spec map — toggle <b>Spec view</b> to inspect it. iRacing renders the finish in the showroom.</p>
+    </section>
+
+    <section class="panel-block" id="inspector-basecoat" hidden>
+      <h2 class="panel-title">Base coat</h2>
+      <div class="slider-row">
+        <label for="ins-base-color">Color</label>
+        <input id="ins-base-color" type="color" value="#1a6cff">
+        <span class="mono" id="ins-base-color-val">#1A6CFF</span>
+      </div>
+    </section>
+  </aside>
+
+</main>
+
+<footer id="statusbar">
+  <span id="status-msg">Ready.</span>
+  <span class="status-right">
+    <span id="status-fs" class="mono"></span>
+    <span id="status-autosave" class="mono"></span>
+    <span id="status-pos" class="mono"></span>
+  </span>
+</footer>
+
+<input type="file" id="file-image" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
+<input type="file" id="file-template" accept="image/png,image/jpeg,image/webp" hidden>
+<input type="file" id="file-project" accept=".json,application/json" hidden>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
