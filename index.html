@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.11</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.12</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -81,7 +81,7 @@
           <button id="btn-add-pattern" class="sm-btn" title="Add a seamless texture as a tiling fill across the whole sheet">+ Pattern</button>
         </span>
       </h2>
-      <p class="hint" style="margin-top:0">Patterns tile the whole sheet — generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro ↗</a> (use its seamless export), then add them here.</p>
+      <p class="hint" style="margin-top:0">Patterns tile a resizable region (default: the whole sheet) — drag its corners to cover just the hood, a stripe, etc. Generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro ↗</a> (use its seamless export), then add them here.</p>
       <button id="btn-import-paint" class="sm-btn wide" title="Read car_<id>.tga from the linked folder (your Trading Paints livery) into the editor as a full-sheet layer">Import current car paint…</button>
       <ul id="layer-list" class="layer-list" role="listbox" aria-label="Layers"></ul>
       <div class="basecoat-row" id="basecoat-row" title="Base coat — the bottom of every livery">
@@ -151,12 +151,20 @@
       <div class="material-grid" id="material-grid"></div>
       <h3 class="sub-title">Fine-tune <span class="title-actions"><button id="tune-reset" class="sm-btn" title="Back to this material's preset values">Reset</button></span></h3>
       <div id="material-tune">
-        <div class="slider-row"><label for="tune-met">Metallic</label><input id="tune-met" type="range" min="0" max="255"><span class="mono" id="tune-met-val"></span></div>
-        <div class="slider-row"><label for="tune-rough">Rough</label><input id="tune-rough" type="range" min="0" max="255"><span class="mono" id="tune-rough-val"></span></div>
-        <div class="slider-row"><label for="tune-clear">Clearcoat</label><input id="tune-clear" type="range" min="0" max="255"><span class="mono" id="tune-clear-val"></span></div>
-        <div class="slider-row" id="tune-density-row"><label for="tune-density">Density</label><input id="tune-density" type="range" min="1" max="60"><span class="mono" id="tune-density-val"></span></div>
-        <div class="slider-row" id="tune-scale-row"><label for="tune-scale">Scale</label><input id="tune-scale" type="range" min="1" max="64"><span class="mono" id="tune-scale-val"></span></div>
-        <div class="slider-row" id="tune-contrast-row"><label for="tune-contrast">Contrast</label><input id="tune-contrast" type="range" min="0" max="200"><span class="mono" id="tune-contrast-val"></span></div>
+        <div class="slider-row"><label for="tune-met">Metallic</label><input id="tune-met" type="range" min="0" max="255"><input id="tune-met-n" type="number" class="tune-num mono" min="0" max="255"></div>
+        <div class="slider-row"><label for="tune-rough">Rough</label><input id="tune-rough" type="range" min="0" max="255"><input id="tune-rough-n" type="number" class="tune-num mono" min="0" max="255"></div>
+        <div class="slider-row"><label for="tune-clear">Clearcoat</label><input id="tune-clear" type="range" min="0" max="255"><input id="tune-clear-n" type="number" class="tune-num mono" min="0" max="255"></div>
+        <div class="slider-row"><label for="tune-density">Density</label><input id="tune-density" type="range" min="1" max="60"><input id="tune-density-n" type="number" class="tune-num mono" min="1" max="60"></div>
+        <div class="slider-row"><label for="tune-scale">Scale</label><input id="tune-scale" type="range" min="1" max="64"><input id="tune-scale-n" type="number" class="tune-num mono" min="1" max="64"></div>
+        <div class="slider-row"><label for="tune-contrast">Contrast</label><input id="tune-contrast" type="range" min="0" max="200"><input id="tune-contrast-n" type="number" class="tune-num mono" min="0" max="200"></div>
+        <div class="slider-row"><label for="tune-tint" title="Color wash over this layer's paint — metallic finishes color their reflections from the paint, so this shifts what pearl/candy/flake read as">Tint</label><input id="tune-tint" type="color" value="#ffffff"><input id="tune-tintamt" type="range" min="0" max="100"><input id="tune-tintamt-n" type="number" class="tune-num mono" min="0" max="100"></div>
+        <div class="slider-row" id="tune-stack-row"><label for="tune-stack" title="How this layer's spec stamps over what's beneath: Replace overwrites, Add compounds coats (e.g. stacked pearl), Multiply darkens">Stack</label>
+          <select id="tune-stack" class="tune-select">
+            <option value="replace">Replace</option>
+            <option value="add">Add (compound)</option>
+            <option value="multiply">Multiply</option>
+          </select>
+        </div>
       </div>
       <p class="hint">Materials are baked into the spec map — toggle <b>Spec view</b> to inspect it, or <b>Shine</b> to watch the finish react to light. Tuned values save with the project; verify in the iRacing showroom.</p>
     </section>

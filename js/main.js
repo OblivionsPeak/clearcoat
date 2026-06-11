@@ -1,7 +1,7 @@
 import {
   SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, renderPaint, renderSpec,
   hitTest, layerCorners, serializeDoc, deserializeDoc, loadImage,
-  templateOverlay, defaultParams, resolveParams,
+  templateOverlay, defaultParams, resolveParams, mixHex,
 } from './engine.js';
 import { canvasToTGA, tgaToCanvas } from './tga.js';
 import { psdToTemplate } from './psd.js';
@@ -146,15 +146,14 @@ function draw() {
     vctx.stroke();
     vctx.setLineDash([]);
 
-    // pattern layers fill the sheet — outline only, transform via inspector
-    if (sel.type !== 'pattern') {
-      // scale handles at corners
-      vctx.fillStyle = '#ff4d00';
-      for (const p of corners) {
-        vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
-      }
+    // scale handles at corners (resize the region for pattern layers)
+    vctx.fillStyle = '#ff4d00';
+    for (const p of corners) {
+      vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
+    }
 
-      // rotate handle floating above top edge
+    // rotate handle — image layers only (pattern regions stay axis-aligned)
+    if (sel.type !== 'pattern') {
       const rot = rotateHandlePos(sel);
       vctx.beginPath();
       vctx.arc(rot.x, rot.y, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
@@ -180,13 +179,15 @@ let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan', ... }
 
 function handleAt(sx, sy) {
   const sel = selectedLayer();
-  if (!sel || !sel.visible || sel.type === 'pattern') return null;
-  const rot = rotateHandlePos(sel);
-  if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'rotate' };
+  if (!sel || !sel.visible) return null;
+  if (sel.type !== 'pattern') {
+    const rot = rotateHandlePos(sel);
+    if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'rotate' };
+  }
   const corners = layerCorners(sel).map(p => docToScreen(p.x, p.y));
   for (let i = 0; i < 4; i++) {
     if (Math.abs(sx - corners[i].x) <= HANDLE_PX && Math.abs(sy - corners[i].y) <= HANDLE_PX) {
-      return { type: 'scale', corner: i };
+      return { type: sel.type === 'pattern' ? 'region' : 'scale', corner: i };
     }
   }
   return null;
@@ -212,6 +213,11 @@ viewport.addEventListener('pointerdown', (e) => {
         mode: 'rotate', layer: sel,
         startAngle: Math.atan2(p.y - sel.y, p.x - sel.x) * 180 / Math.PI - sel.rotation,
       };
+    } else if (handle.type === 'region') {
+      // anchor = the corner opposite the grabbed one
+      const corners = layerCorners(sel);
+      const anchor = corners[(handle.corner + 2) % 4];
+      drag = { mode: 'region', layer: sel, anchor };
     } else {
       drag = {
         mode: 'scale', layer: sel,
@@ -226,7 +232,9 @@ viewport.addEventListener('pointerdown', (e) => {
   const hit = hitTest(doc, p.x, p.y);
   if (hit) {
     selectLayer(hit.id);
-    drag = { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y };
+    drag = hit.type === 'pattern'
+      ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry }
+      : { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y };
   } else {
     selectLayer(null);
     drag = { mode: 'pan', startX: sx, startY: sy, vx: view.x, vy: view.y };
@@ -256,6 +264,25 @@ viewport.addEventListener('pointermove', (e) => {
       syncInspector();
       markDirty();
       break;
+    case 'move-region': {
+      const l = drag.layer;
+      const nx = Math.round(p.x - drag.offX);
+      const ny = Math.round(p.y - drag.offY);
+      l.x += nx - l.rx; l.y += ny - l.ry; // texture rides along with its region
+      l.rx = nx; l.ry = ny;
+      markDirty();
+      break;
+    }
+    case 'region': {
+      const l = drag.layer;
+      const a = drag.anchor;
+      l.rx = Math.round(Math.min(a.x, p.x));
+      l.ry = Math.round(Math.min(a.y, p.y));
+      l.rw = Math.max(32, Math.round(Math.abs(p.x - a.x)));
+      l.rh = Math.max(32, Math.round(Math.abs(p.y - a.y)));
+      markDirty();
+      break;
+    }
     case 'scale': {
       const dist = Math.hypot(p.x - drag.layer.x, p.y - drag.layer.y);
       if (drag.startDist > 1) {
@@ -500,10 +527,14 @@ function syncMaterialGrid() {
   // shade every ball with the color the material would actually be applied to
   const albedo = selectedId === 'base' ? doc.baseColor : layerAlbedo(selectedLayer(), doc.baseColor);
   const activeParams = target ? resolveParams(current, target.matParams) : null;
+  // the active ball previews the tint wash on its albedo, like the paint will
+  const activeAlbedo = (activeParams?.tintAmt && activeParams.tint)
+    ? mixHex(albedo, activeParams.tint, activeParams.tintAmt / 100)
+    : albedo;
   document.querySelectorAll('.material-swatch').forEach(btn => {
     const isActive = btn.dataset.material === current;
     btn.classList.toggle('active', isActive);
-    renderBall(btn.querySelector('.ball'), btn.dataset.material, albedo, isActive ? activeParams : null);
+    renderBall(btn.querySelector('.ball'), btn.dataset.material, isActive ? activeAlbedo : albedo, isActive ? activeParams : null);
   });
   syncMaterialTune();
 }
@@ -519,28 +550,66 @@ function syncMaterialTune() {
     const applies = p[key] !== undefined;
     row.hidden = !applies;
     if (!applies) continue;
+    if (document.activeElement !== $(`tune-${key}-n`)) $(`tune-${key}-n`).value = p[key];
     $(`tune-${key}`).value = p[key];
-    $(`tune-${key}-val`).textContent = key === 'density' || key === 'contrast' ? p[key] + '%' : p[key];
   }
+  $('tune-tint').value = p.tint || '#ffffff';
+  $('tune-tintamt').value = p.tintAmt || 0;
+  if (document.activeElement !== $('tune-tintamt-n')) $('tune-tintamt-n').value = p.tintAmt || 0;
+  // stacking applies to layers only — the base coat has nothing beneath it
+  $('tune-stack-row').hidden = selectedId === 'base';
+  const sel = selectedLayer();
+  if (sel) $('tune-stack').value = sel.specBlend || 'replace';
+}
+
+function setTuneParam(key, raw, min, max) {
+  const target = matTarget();
+  if (!target) return;
+  const v = parseInt(raw, 10);
+  if (!Number.isFinite(v)) return;
+  const p = resolveParams(target.material, target.matParams);
+  p[key] = Math.max(min, Math.min(max, v));
+  target.matParams = p;
+  syncMaterialGrid();
+  markDirty();
 }
 
 for (const key of TUNE_KEYS) {
-  $(`tune-${key}`).addEventListener('input', () => {
-    const target = matTarget();
-    if (!target) return;
-    const p = resolveParams(target.material, target.matParams);
-    p[key] = parseInt($(`tune-${key}`).value, 10);
-    target.matParams = p;
-    $(`tune-${key}-val`).textContent = key === 'density' || key === 'contrast' ? p[key] + '%' : p[key];
-    syncMaterialGrid();
-    markDirty();
-  });
+  const range = $(`tune-${key}`);
+  const num = $(`tune-${key}-n`);
+  const min = parseInt(range.min, 10), max = parseInt(range.max, 10);
+  range.addEventListener('input', () => setTuneParam(key, range.value, min, max));
+  num.addEventListener('input', () => setTuneParam(key, num.value, min, max));
+  num.addEventListener('blur', () => syncMaterialTune());
 }
+
+$('tune-tint').addEventListener('input', () => {
+  const target = matTarget();
+  if (!target) return;
+  const p = resolveParams(target.material, target.matParams);
+  p.tint = $('tune-tint').value;
+  if (!p.tintAmt) { p.tintAmt = 35; } // picking a color implies wanting some of it
+  target.matParams = p;
+  syncMaterialGrid();
+  markDirty();
+});
+$('tune-tintamt').addEventListener('input', () => setTuneParam('tintAmt', $('tune-tintamt').value, 0, 100));
+$('tune-tintamt-n').addEventListener('input', () => setTuneParam('tintAmt', $('tune-tintamt-n').value, 0, 100));
+$('tune-tintamt-n').addEventListener('blur', () => syncMaterialTune());
+
+$('tune-stack').addEventListener('change', () => {
+  const sel = selectedLayer();
+  if (!sel) return;
+  sel.specBlend = $('tune-stack').value;
+  markDirty();
+});
 
 $('tune-reset').addEventListener('click', () => {
   const target = matTarget();
   if (!target) return;
   target.matParams = null;
+  const sel = selectedLayer();
+  if (sel) sel.specBlend = 'replace';
   syncMaterialGrid();
   markDirty();
 });

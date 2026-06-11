@@ -430,6 +430,33 @@ input  { font-family: inherit; }
 }
 .ins-name:focus { outline: none; border-color: var(--seam-bright); }
 
+.tune-num {
+  width: 48px;
+  background: var(--asphalt);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 11px;
+  padding: 4px 5px;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.tune-num::-webkit-inner-spin-button, .tune-num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.tune-num:focus { outline: none; border-color: var(--seam-bright); }
+
+.tune-select {
+  flex: 1;
+  background: var(--asphalt);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 11px;
+  padding: 5px 6px;
+}
+.tune-select:focus { outline: none; border-color: var(--seam-bright); }
+
+#material-tune .slider-row input[type=color] { width: 30px; height: 24px; flex: none; }
+
 .hexfield {
   flex: 1;
   min-width: 0;

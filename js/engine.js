@@ -164,6 +164,7 @@ export function createPatternLayer(img, src, name) {
     rotation: 0,
     flipH: false,
     flipV: false,
+    rx: 0, ry: 0, rw: SIZE, rh: SIZE,  // region the tiled fill covers
   };
 }
 
@@ -187,7 +188,7 @@ function drawLayer(ctx, layer) {
       .rotate(layer.rotation)
       .scale(layer.scale * (layer.flipH ? -1 : 1), layer.scale * (layer.flipV ? -1 : 1)));
     ctx.fillStyle = pat;
-    ctx.fillRect(0, 0, SIZE, SIZE);
+    ctx.fillRect(layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE);
   } else {
     ctx.translate(layer.x, layer.y);
     ctx.rotate(layer.rotation * Math.PI / 180);
@@ -197,15 +198,47 @@ function drawLayer(ctx, layer) {
   ctx.restore();
 }
 
+export function mixHex(hexA, hexB, t) {
+  const a = [1, 3, 5].map(i => parseInt(hexA.slice(i, i + 2), 16));
+  const b = [1, 3, 5].map(i => parseInt(hexB.slice(i, i + 2), 16));
+  return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+
+// material tint: a color wash over the layer's paint — at high metallic the
+// sim colors reflections from the paint underneath, so this is how you shift
+// what a pearl/candy/flake finish reads as (e.g. pearl drifting warm/yellow
+// under showroom lighting → tint it cool).
+function applyTint(ctx, layer) {
+  const p = layer.matParams;
+  const amt = (p?.tintAmt || 0) / 100;
+  if (!amt || !p.tint) return;
+  const sctx = scratch.getContext('2d');
+  sctx.clearRect(0, 0, SIZE, SIZE);
+  drawLayer(sctx, layer);
+  sctx.save();
+  sctx.globalCompositeOperation = 'source-in';
+  sctx.fillStyle = p.tint;
+  sctx.fillRect(0, 0, SIZE, SIZE);
+  sctx.restore();
+  ctx.save();
+  ctx.globalAlpha = amt;
+  ctx.drawImage(scratch, 0, 0);
+  ctx.restore();
+}
+
 export function renderPaint(doc) {
   const ctx = paintCanvas.getContext('2d');
   ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.fillStyle = doc.baseColor;
+  const bp = doc.baseMatParams;
+  ctx.fillStyle = (bp?.tintAmt && bp.tint)
+    ? mixHex(doc.baseColor, bp.tint, bp.tintAmt / 100)
+    : doc.baseColor;
   ctx.fillRect(0, 0, SIZE, SIZE);
   for (const layer of doc.layers) {
     if (!layer.visible) continue;
     if ((MATERIALS[layer.material] || {}).ghost) continue; // spec-only layer
     drawLayer(ctx, layer);
+    applyTint(ctx, layer);
   }
   return paintCanvas;
 }
@@ -240,7 +273,14 @@ export function renderSpec(doc) {
       sctx.fillRect(0, 0, SIZE, SIZE);
     }
     sctx.restore();
+    // spec stacking: Replace overwrites, Add brightens channels where layers
+    // overlap (compound coats), Multiply darkens
+    ctx.save();
+    ctx.globalCompositeOperation =
+      layer.specBlend === 'add' ? 'lighter' :
+      layer.specBlend === 'multiply' ? 'multiply' : 'source-over';
     ctx.drawImage(scratch, 0, 0);
+    ctx.restore();
   }
   return specCanvas;
 }
@@ -295,16 +335,21 @@ export function templateOverlay(doc) {
 
 // ---------- hit testing ----------
 
-// returns topmost layer at doc-space point, or null
+// returns topmost layer at doc-space point, or null — image layers take
+// precedence over pattern regions so fills never block logo dragging
 export function hitTest(doc, px, py) {
   for (let i = doc.layers.length - 1; i >= 0; i--) {
     const l = doc.layers[i];
-    if (!l.visible) continue;
-    if (l.type === 'pattern') continue; // full-sheet fills — select via layer panel
+    if (!l.visible || l.type === 'pattern') continue;
     const local = toLocal(l, px, py);
     if (Math.abs(local.x) <= l.img.width / 2 && Math.abs(local.y) <= l.img.height / 2) {
       return l;
     }
+  }
+  for (let i = doc.layers.length - 1; i >= 0; i--) {
+    const l = doc.layers[i];
+    if (!l.visible || l.type !== 'pattern') continue;
+    if (px >= l.rx && px <= l.rx + l.rw && py >= l.ry && py <= l.ry + l.rh) return l;
   }
   return null;
 }
@@ -324,7 +369,8 @@ export function toLocal(layer, px, py) {
 // corner positions of a layer in doc space (for selection box / handles)
 export function layerCorners(layer) {
   if (layer.type === 'pattern') {
-    return [{ x: 0, y: 0 }, { x: SIZE, y: 0 }, { x: SIZE, y: SIZE }, { x: 0, y: SIZE }];
+    const { rx = 0, ry = 0, rw = SIZE, rh = SIZE } = layer;
+    return [{ x: rx, y: ry }, { x: rx + rw, y: ry }, { x: rx + rw, y: ry + rh }, { x: rx, y: ry + rh }];
   }
   const hw = layer.img.width / 2 * layer.scale;
   const hh = layer.img.height / 2 * layer.scale;
@@ -354,9 +400,11 @@ export function serializeDoc(doc) {
       id: l.id, type: l.type, name: l.name,
       visible: l.visible, opacity: l.opacity, material: l.material,
       matParams: l.matParams || null,
+      specBlend: l.specBlend || 'replace',
       src: l.src,
       x: l.x, y: l.y, scale: l.scale, rotation: l.rotation,
       flipH: l.flipH, flipV: l.flipV,
+      rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
     })),
   };
 }
@@ -394,10 +442,12 @@ export async function deserializeDoc(data) {
         visible: l.visible !== false, opacity: l.opacity ?? 1,
         material: l.material || 'gloss',
         matParams: l.matParams || null,
+        specBlend: l.specBlend || 'replace',
         img, src: l.src,
         x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
         scale: l.scale ?? 1, rotation: l.rotation ?? 0,
         flipH: !!l.flipH, flipV: !!l.flipV,
+        rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
       });
     } catch { /* skip broken layer */ }
   }
