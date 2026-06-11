@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench</span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.4</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -100,6 +100,13 @@
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
     </div>
     <div id="drop-cue" hidden><span>Drop image to add layer</span></div>
+    <div id="spec-legend" hidden>
+      <b>Spec map</b> — these colors are material data, not paint:
+      <span class="leg r">R&nbsp;metallic</span>
+      <span class="leg g">G&nbsp;roughness</span>
+      <span class="leg b">B&nbsp;clearcoat</span>
+      <em>e.g. matte&nbsp;=&nbsp;green (high roughness), gloss&nbsp;=&nbsp;blue (high clearcoat)</em>
+    </div>
   </section>
 
   <!-- ============ RIGHT: INSPECTOR ============ -->

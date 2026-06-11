@@ -42,6 +42,8 @@ No install, no backend, no account. Everything runs client-side; projects autosa
 
 Pure static site — no build step. Serve the folder with anything (`python -m http.server`) and open `index.html`. ES modules require http(s), not `file://`.
 
+Bump the `#app-version` stamp in `index.html` with every deploy — GitHub Pages caches assets for 10 minutes, and the visible version (top-left, next to the wordmark) is how users confirm they're on the latest build after a hard refresh (Ctrl+F5).
+
 ```
 index.html
 css/app.css

@@ -582,6 +582,7 @@ $('btn-zoom-out').addEventListener('click', () => { setZoom(view.zoom / 1.25, vi
 $('btn-spec-view').addEventListener('click', () => {
   specView = !specView;
   $('btn-spec-view').classList.toggle('active', specView);
+  $('spec-legend').hidden = !specView;
   requestRender();
 });
 

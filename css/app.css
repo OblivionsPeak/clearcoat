@@ -386,6 +386,30 @@ input  { font-family: inherit; }
   pointer-events: none;
   z-index: 5;
 }
+#spec-legend {
+  position: absolute;
+  top: 12px; left: 50%;
+  transform: translateX(-50%);
+  max-width: 90%;
+  background: rgba(21, 23, 28, .92);
+  border: 1px solid var(--seam);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 11px;
+  color: var(--ink-dim);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+#spec-legend b { color: var(--cyan); font-weight: 600; }
+#spec-legend em { color: var(--ink-faint); font-style: normal; }
+#spec-legend .leg { font-family: var(--font-mono); font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+#spec-legend .leg.r { background: #4a1313; color: #ff8d8d; }
+#spec-legend .leg.g { background: #133f16; color: #8dff96; }
+#spec-legend .leg.b { background: #13234a; color: #8db4ff; }
+
+#app-version { color: var(--orange); }
+
 #drop-cue span {
   font-family: var(--font-display);
   font-size: 22px; font-weight: 600;
