@@ -5,6 +5,8 @@ import {
 } from './engine.js';
 import { canvasToTGA } from './tga.js';
 import { psdToTemplate } from './psd.js';
+import { renderBall, layerAlbedo } from './shaderball.js';
+import { lightSweepSupported, lightSweepFrame } from './lightsweep.js';
 import * as persist from './persist.js';
 
 // ---------- state ----------
@@ -12,6 +14,8 @@ import * as persist from './persist.js';
 let doc = createDoc();
 let selectedId = null;        // layer id, 'base', or null
 let specView = false;
+let shineView = false;
+let shineStart = 0;
 let dirty = true;             // composite needs re-render
 let autosaveTimer = null;
 
@@ -89,7 +93,18 @@ function draw() {
   vctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   vctx.clearRect(0, 0, w, h);
 
-  const composite = specView ? renderSpec(doc) : renderPaint(doc);
+  let composite;
+  if (specView) {
+    composite = renderSpec(doc);
+  } else if (shineView) {
+    const frame = lightSweepFrame(
+      renderPaint(doc), renderSpec(doc),
+      (performance.now() - shineStart) / 1000, dirty,
+    );
+    composite = frame || renderPaint(doc); // WebGL unavailable → plain paint
+  } else {
+    composite = renderPaint(doc);
+  }
   dirty = false;
 
   vctx.save();
@@ -442,8 +457,11 @@ function syncInspector() {
 
 function syncMaterialGrid() {
   const current = selectedId === 'base' ? doc.baseMaterial : selectedLayer()?.material;
+  // shade every ball with the color the material would actually be applied to
+  const albedo = selectedId === 'base' ? doc.baseColor : layerAlbedo(selectedLayer(), doc.baseColor);
   document.querySelectorAll('.material-swatch').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.material === current);
+    renderBall(btn.querySelector('.ball'), btn.dataset.material, albedo);
   });
 }
 
@@ -453,7 +471,7 @@ function buildMaterialGrid() {
     const btn = document.createElement('button');
     btn.className = 'material-swatch';
     btn.dataset.material = key;
-    btn.innerHTML = `<span class="ball ${key}"></span><span class="mlabel">${mat.label}</span>`;
+    btn.innerHTML = `<canvas class="ball"></canvas><span class="mlabel">${mat.label}</span>`;
     btn.addEventListener('click', () => {
       if (selectedId === 'base') doc.baseMaterial = key;
       else { const sel = selectedLayer(); if (sel) sel.material = key; }
@@ -496,6 +514,7 @@ $('ins-base-color').addEventListener('input', () => {
   doc.baseColor = $('ins-base-color').value;
   $('basecoat-color').value = doc.baseColor;
   $('ins-base-color-val').textContent = doc.baseColor.toUpperCase();
+  syncMaterialGrid();
   markDirty();
 });
 
@@ -505,6 +524,7 @@ $('basecoat-color').addEventListener('click', (e) => e.stopPropagation());
 $('basecoat-color').addEventListener('input', () => {
   doc.baseColor = $('basecoat-color').value;
   if (selectedId === 'base') syncInspector();
+  else syncMaterialGrid();
   markDirty();
 });
 
@@ -591,10 +611,33 @@ $('btn-zoom-in').addEventListener('click', () => { setZoom(view.zoom * 1.25, vie
 $('btn-zoom-out').addEventListener('click', () => { setZoom(view.zoom / 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2); $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%'; });
 $('btn-spec-view').addEventListener('click', () => {
   specView = !specView;
+  if (specView && shineView) setShineView(false);
   $('btn-spec-view').classList.toggle('active', specView);
   $('spec-legend').hidden = !specView;
   requestRender();
 });
+
+function setShineView(on) {
+  shineView = on;
+  $('btn-shine-view').classList.toggle('active', on);
+  if (on) {
+    shineStart = performance.now();
+    if (specView) {
+      specView = false;
+      $('btn-spec-view').classList.remove('active');
+      $('spec-legend').hidden = true;
+    }
+    markDirty(); // force a texture re-upload for the first frame
+    (function shineLoop() {
+      if (!shineView) return;
+      requestRender();
+      requestAnimationFrame(shineLoop);
+    })();
+  } else {
+    requestRender();
+  }
+}
+$('btn-shine-view').addEventListener('click', () => setShineView(!shineView));
 
 // ---------- project save / open / new ----------
 
@@ -749,6 +792,7 @@ window.addEventListener('keydown', (e) => {
     $('btn-spec-view').click(); return;
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelected(); return; }
+  if (e.key === 'l' || e.key === 'L') { setShineView(!shineView); return; }
 
   const sel = selectedLayer();
   if (sel && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
@@ -770,6 +814,11 @@ window.addEventListener('resize', requestRender);
 
 (async function boot() {
   buildMaterialGrid();
+
+  if (!lightSweepSupported()) {
+    $('btn-shine-view').disabled = true;
+    $('btn-shine-view').title = 'Shine preview needs WebGL';
+  }
 
   const savedCustid = await persist.loadSetting('custid').catch(() => null);
   if (savedCustid) $('custid').value = savedCustid;

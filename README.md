@@ -36,6 +36,7 @@ No install, no backend, no account. Everything runs client-side; projects autosa
 | `Delete` | Delete layer |
 | `Ctrl+D` | Duplicate layer |
 | `S` | Toggle spec view |
+| `L` | Toggle Shine view — a light sweeps the livery so finishes preview in-app (gloss flashes, flake sparkles, ghost layers appear) |
 | `F` | Fit to window |
 | Scroll / Space-drag or right-drag | Zoom / pan |
 
