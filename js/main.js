@@ -14,7 +14,8 @@ import * as persist from './persist.js';
 // ---------- state ----------
 
 let doc = createDoc();
-let selectedId = null;        // layer id, 'base', or null
+let selectedId = null;        // primary selection: layer id, 'base', or null
+const selectedIds = new Set(); // multi-select (layer ids only, never 'base')
 let specView = false;
 let shineView = false;
 let shineStart = 0;
@@ -80,6 +81,60 @@ function markDirty() {
   scheduleAutosave();
 }
 
+// ---------- undo / redo ----------
+// Snapshot-based: the autosave debounce also captures history, so one undo
+// step ≈ one settled action (a slider drag, a move, a delete).
+
+const undoStack = [];
+const redoStack = [];
+let suppressHistory = false;
+
+function captureHistory() {
+  if (suppressHistory) return;
+  const snap = JSON.stringify(serializeDoc(doc));
+  if (undoStack[undoStack.length - 1] === snap) return;
+  undoStack.push(snap);
+  if (undoStack.length > 40) undoStack.shift();
+  redoStack.length = 0;
+  updateUndoButtons();
+}
+
+function updateUndoButtons() {
+  $('btn-undo').disabled = undoStack.length < 2;
+  $('btn-redo').disabled = redoStack.length === 0;
+}
+
+async function applyHistory(snap) {
+  suppressHistory = true;
+  try {
+    doc = await deserializeDoc(JSON.parse(snap));
+    selectedId = null;
+    selectedIds.clear();
+    syncDocUI();
+    markDirty();
+  } finally {
+    // lift suppression after the autosave debounce would have fired
+    setTimeout(() => { suppressHistory = false; }, 1500);
+  }
+  updateUndoButtons();
+}
+
+function undo() {
+  if (undoStack.length < 2) return;
+  redoStack.push(undoStack.pop());
+  applyHistory(undoStack[undoStack.length - 1]);
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  const snap = redoStack.pop();
+  undoStack.push(snap);
+  applyHistory(snap);
+}
+
+$('btn-undo').addEventListener('click', undo);
+$('btn-redo').addEventListener('click', redo);
+
 function selectedLayer() {
   return doc.layers.find(l => l.id === selectedId) || null;
 }
@@ -133,6 +188,21 @@ function draw() {
     vctx.restore();
   }
   vctx.restore();
+
+  // secondary selections: outline only, no handles
+  for (const l of selectedLayers()) {
+    if (l.id === selectedId || !l.visible) continue;
+    const corners = layerCorners(l).map(p => docToScreen(p.x, p.y));
+    vctx.save();
+    vctx.strokeStyle = 'rgba(255, 77, 0, .45)';
+    vctx.lineWidth = 1.5;
+    vctx.setLineDash([4, 4]);
+    vctx.beginPath();
+    corners.forEach((p, i) => i ? vctx.lineTo(p.x, p.y) : vctx.moveTo(p.x, p.y));
+    vctx.closePath();
+    vctx.stroke();
+    vctx.restore();
+  }
 
   // selection box + handles (screen space for crisp lines)
   const sel = selectedLayer();
@@ -242,6 +312,16 @@ viewport.addEventListener('pointerdown', (e) => {
     if (idx !== -1) hit = hits[(idx + 1) % hits.length];
   }
   if (hit) {
+    // dragging within a multi-selection moves the whole selection
+    if (selectedIds.has(hit.id) && selectedIds.size > 1) {
+      drag = {
+        mode: 'move-multi', startP: p,
+        starts: selectedLayers().filter(l => !l.locked).map(l => ({
+          layer: l, x: l.x, y: l.y, rx: l.rx, ry: l.ry,
+        })),
+      };
+      return;
+    }
     selectLayer(hit.id);
     drag = isRegionLayer(hit)
       ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry }
@@ -275,6 +355,21 @@ viewport.addEventListener('pointermove', (e) => {
       syncInspector();
       markDirty();
       break;
+    case 'move-multi': {
+      const dx = Math.round(p.x - drag.startP.x);
+      const dy = Math.round(p.y - drag.startP.y);
+      for (const s of drag.starts) {
+        if (isRegionLayer(s.layer)) {
+          s.layer.rx = s.rx + dx; s.layer.ry = s.ry + dy;
+          s.layer.x = s.x + dx; s.layer.y = s.y + dy;
+        } else {
+          s.layer.x = s.x + dx; s.layer.y = s.y + dy;
+        }
+      }
+      syncInspector();
+      markDirty();
+      break;
+    }
     case 'move-region': {
       const l = drag.layer;
       const nx = Math.round(p.x - drag.offX);
@@ -375,9 +470,29 @@ async function addImageLayerFromFile(file, asPattern = false) {
 
 function selectLayer(id) {
   selectedId = id;
+  selectedIds.clear();
+  if (id && id !== 'base') selectedIds.add(id);
   rebuildLayerList();
   syncInspector();
   requestRender();
+}
+
+// Ctrl+click in the layer list adds/removes from the selection
+function toggleSelect(id) {
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id);
+    if (selectedId === id) selectedId = [...selectedIds].pop() || null;
+  } else {
+    selectedIds.add(id);
+    selectedId = id;
+  }
+  rebuildLayerList();
+  syncInspector();
+  requestRender();
+}
+
+function selectedLayers() {
+  return doc.layers.filter(l => selectedIds.has(l.id));
 }
 
 function rebuildLayerList() {
@@ -392,7 +507,9 @@ function rebuildLayerList() {
   // top layer first in the panel
   [...doc.layers].reverse().forEach((layer) => {
     const li = document.createElement('li');
-    li.className = 'layer-item' + (layer.id === selectedId ? ' selected' : '') + (layer.visible ? '' : ' hidden-layer');
+    li.className = 'layer-item'
+      + (layer.id === selectedId || selectedIds.has(layer.id) ? ' selected' : '')
+      + (layer.visible ? '' : ' hidden-layer');
     li.setAttribute('role', 'option');
 
     let thumb;
@@ -458,7 +575,10 @@ function rebuildLayerList() {
     order.append(up, down);
 
     li.append(thumb, name, mat, dup, lock, vis, order);
-    li.addEventListener('click', () => selectLayer(layer.id));
+    li.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey) toggleSelect(layer.id);
+      else selectLayer(layer.id);
+    });
     list.appendChild(li);
   });
 
@@ -476,12 +596,12 @@ function moveLayer(layer, dir) {
 }
 
 function deleteSelected() {
-  const sel = selectedLayer();
-  if (!sel) return;
-  doc.layers = doc.layers.filter(l => l !== sel);
+  const targets = selectedLayers();
+  if (!targets.length) return;
+  doc.layers = doc.layers.filter(l => !selectedIds.has(l.id));
   selectLayer(null);
   markDirty();
-  status('Layer deleted.');
+  status(targets.length > 1 ? `${targets.length} layers deleted.` : 'Layer deleted.');
 }
 
 function duplicateLayer(layer) {
@@ -500,8 +620,20 @@ function duplicateLayer(layer) {
 }
 
 function duplicateSelected() {
-  const sel = selectedLayer();
-  if (sel) duplicateLayer(sel);
+  const targets = selectedLayers();
+  if (!targets.length) return;
+  if (targets.length === 1) { duplicateLayer(targets[0]); return; }
+  // duplicate the whole selection and select the copies
+  const copies = targets.map(l => {
+    duplicateLayer(l);
+    return doc.layers[doc.layers.length - 1].id;
+  });
+  selectedIds.clear();
+  copies.forEach(id => selectedIds.add(id));
+  selectedId = copies[copies.length - 1];
+  rebuildLayerList();
+  syncInspector();
+  markDirty();
 }
 
 // ---------- inspector ----------
@@ -518,6 +650,7 @@ function syncInspector() {
     if (document.activeElement !== $('ins-name')) $('ins-name').value = sel.name;
     $('ins-opacity').value = Math.round(sel.opacity * 100);
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
+    $('ins-spec-only').checked = !!sel.specOnly;
     // fill layers: color picker instead of image transforms
     $('ins-fill-row').hidden = sel.type !== 'fill';
     document.querySelector('.xform-grid').hidden = sel.type === 'fill';
@@ -720,6 +853,11 @@ for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale']
     markDirty();
   });
 }
+$('ins-spec-only').addEventListener('change', () => {
+  const sel = selectedLayer(); if (!sel) return;
+  sel.specOnly = $('ins-spec-only').checked;
+  markDirty();
+});
 $('ins-flip-h').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipH = !s.flipH; markDirty(); } });
 $('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipV = !s.flipV; markDirty(); } });
 $('ins-delete').addEventListener('click', deleteSelected);
@@ -972,6 +1110,15 @@ $('btn-new').addEventListener('click', () => {
 
 function afterDocLoad() {
   selectedId = null;
+  selectedIds.clear();
+  syncDocUI();
+  fitView();
+  markDirty();
+  captureHistory();
+}
+
+// UI sync shared by project load and history restore (no view reset)
+function syncDocUI() {
   $('project-name').value = doc.name;
   $('btn-clear-template').hidden = !doc.template;
   $('template-opacity-row').hidden = !doc.template;
@@ -982,8 +1129,6 @@ function afterDocLoad() {
   $('basecoat-color').value = doc.baseColor;
   rebuildLayerList();
   syncInspector();
-  fitView();
-  markDirty();
 }
 
 // ---------- autosave ----------
@@ -991,6 +1136,7 @@ function afterDocLoad() {
 function scheduleAutosave() {
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(async () => {
+    captureHistory();
     try {
       await persist.saveAutosave(serializeDoc(doc));
       $('status-autosave').textContent = 'autosaved ' + new Date().toLocaleTimeString();
@@ -1250,6 +1396,12 @@ window.addEventListener('keydown', (e) => {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
   if (e.code === 'Space') { spaceHeld = true; e.preventDefault(); return; }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
   if (e.key === 'Escape') { selectLayer(null); return; }
   if (e.key === 'f' || e.key === 'F') { fitView(); return; }
@@ -1260,14 +1412,17 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelected(); return; }
   if (e.key === 'l' || e.key === 'L') { setShineView(!shineView); return; }
 
-  const sel = selectedLayer();
-  if (sel && !sel.locked && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    const targets = selectedLayers().filter(l => !l.locked);
+    if (!targets.length) return;
     e.preventDefault();
     const step = e.shiftKey ? 10 : 1;
-    if (e.key === 'ArrowUp') sel.y -= step;
-    if (e.key === 'ArrowDown') sel.y += step;
-    if (e.key === 'ArrowLeft') sel.x -= step;
-    if (e.key === 'ArrowRight') sel.x += step;
+    const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+    const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+    for (const l of targets) {
+      l.x += dx; l.y += dy;
+      if (isRegionLayer(l)) { l.rx += dx; l.ry += dy; }
+    }
     syncInspector();
     markDirty();
   }

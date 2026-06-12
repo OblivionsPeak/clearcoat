@@ -339,7 +339,8 @@ export function renderPaint(doc) {
   ctx.fillRect(0, 0, SIZE, SIZE);
   for (const layer of doc.layers) {
     if (!layer.visible) continue;
-    if ((MATERIALS[layer.material] || {}).ghost) continue; // spec-only layer
+    // ghost material and "material only" layers exist solely in the spec map
+    if ((MATERIALS[layer.material] || {}).ghost || layer.specOnly) continue;
     drawLayer(ctx, layer);
     applyTint(ctx, layer);
   }
@@ -501,6 +502,7 @@ export function serializeDoc(doc) {
       visible: l.visible, locked: !!l.locked, opacity: l.opacity, material: l.material,
       matParams: l.matParams || null,
       specBlend: l.specBlend || 'replace',
+      specOnly: !!l.specOnly,
       color: l.color,
       src: l.src,
       text: l.text, font: l.font, fontSize: l.fontSize,
@@ -547,6 +549,7 @@ export async function deserializeDoc(data) {
           material: l.material || 'gloss',
           matParams: l.matParams || null,
           specBlend: l.specBlend || 'replace',
+          specOnly: !!l.specOnly,
           rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
         });
         continue;
@@ -585,6 +588,7 @@ export async function deserializeDoc(data) {
         material: l.material || 'gloss',
         matParams: l.matParams || null,
         specBlend: l.specBlend || 'replace',
+        specOnly: !!l.specOnly,
         img, src: l.src,
         x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
         scale: l.scale ?? 1, rotation: l.rotation ?? 0,

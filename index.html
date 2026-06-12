@@ -27,6 +27,8 @@
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
 
   <div class="topbar-group">
+    <button id="btn-undo" class="tb-btn" title="Undo (Ctrl+Z)" disabled>↶</button>
+    <button id="btn-redo" class="tb-btn" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷</button>
     <button id="btn-new" class="tb-btn" title="New project">New</button>
     <button id="btn-open" class="tb-btn" title="Open a .clearcoat.json project">Open</button>
     <button id="btn-save" class="tb-btn" title="Download project as .clearcoat.json">Save</button>
@@ -139,6 +141,10 @@
         <input id="ins-opacity" type="range" min="0" max="100" value="100">
         <span class="mono" id="ins-opacity-val">100%</span>
       </div>
+
+      <label class="tb-check" style="margin-top:10px" title="Don't paint this layer's color — only stamp its material into the spec map. Use over an imported livery to give parts of the existing design a finish (pearl, candy, flake…) without repainting them.">
+        <input type="checkbox" id="ins-spec-only"> Material only (don't paint)
+      </label>
 
       <div id="ins-text-section" hidden>
         <h3 class="sub-title">Text</h3>
