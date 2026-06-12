@@ -11,6 +11,7 @@ import { psdToTemplate } from './psd.js';
 import { renderBall, layerAlbedo } from './shaderball.js';
 import { lightSweepSupported, lightSweepFrame } from './lightsweep.js';
 import * as persist from './persist.js';
+import { LIBRARY, libraryItemToLayerSource } from './library.js';
 
 // ---------- state ----------
 
@@ -1165,6 +1166,52 @@ for (const [id, prop, min, max] of [
   $(id).addEventListener('blur', () => syncInspector());
 }
 
+// ---------- graphics library ----------
+
+const libraryModal = $('library-modal');
+
+function buildLibraryGrid() {
+  const grid = $('library-grid');
+  for (const item of LIBRARY) {
+    const btn = document.createElement('button');
+    btn.className = 'library-item';
+    btn.title = `Insert "${item.name}" as an image layer`;
+    btn.innerHTML = item.svg + `<span class="library-name">${item.name}</span>`;
+    btn.addEventListener('click', () => addLibraryItem(item));
+    grid.appendChild(btn);
+  }
+}
+
+function openLibrary() {
+  if (!$('library-grid').childElementCount) buildLibraryGrid();
+  libraryModal.hidden = false;
+}
+
+function closeLibrary() {
+  libraryModal.hidden = true;
+}
+
+async function addLibraryItem(item) {
+  closeLibrary();
+  try {
+    const src = await libraryItemToLayerSource(item);
+    const img = await loadImage(src);
+    const layer = createImageLayer(img, src, item.name);
+    doc.layers.push(layer);
+    selectLayer(layer.id);
+    markDirty();
+    status(`Added "${item.name}" — recolor it with the material Tint.`, 'ok');
+  } catch {
+    status('Could not add that graphic.', 'err');
+  }
+}
+
+$('btn-add-library').addEventListener('click', openLibrary);
+$('library-close').addEventListener('click', closeLibrary);
+libraryModal.addEventListener('click', (e) => {
+  if (e.target === libraryModal) closeLibrary(); // backdrop click
+});
+
 $('btn-add-pattern').addEventListener('click', () => $('file-pattern').click());
 $('file-pattern').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -1600,7 +1647,10 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
-  if (e.key === 'Escape') { selectLayer(null); return; }
+  if (e.key === 'Escape') {
+    if (!libraryModal.hidden) { closeLibrary(); return; }
+    selectLayer(null); return;
+  }
   if (e.key === 'f' || e.key === 'F') { fitView(); return; }
   if (e.key === 's' || e.key === 'S') {
     if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('btn-save').click(); return; }
