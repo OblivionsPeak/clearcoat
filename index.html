@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Clearcoat — iRacing Livery Workbench</title>
+<title>Clearcoat â€” iRacing Livery Workbench</title>
 <meta name="description" content="Photoshop-free iRacing livery editing with live preview on the real car. Layer editor, automatic spec maps, direct save into your iRacing paints folder.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,38 +21,38 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.24</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.25</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
 
   <div class="topbar-group">
-    <button id="btn-undo" class="tb-btn" title="Undo (Ctrl+Z)" disabled>↶</button>
-    <button id="btn-redo" class="tb-btn" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷</button>
+    <button id="btn-undo" class="tb-btn" title="Undo (Ctrl+Z)" disabled>â†¶</button>
+    <button id="btn-redo" class="tb-btn" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>â†·</button>
     <button id="btn-new" class="tb-btn" title="New project">New</button>
     <button id="btn-open" class="tb-btn" title="Open a .clearcoat.json project">Open</button>
     <button id="btn-save" class="tb-btn" title="Download project as .clearcoat.json">Save</button>
   </div>
 
   <div class="topbar-group divider">
-    <select id="paint-target" class="custid paint-target" title="What this project paints — sets the exported filenames (helmets export at 1024×1024)" aria-label="Paint target">
+    <select id="paint-target" class="custid paint-target" title="What this project paints â€” sets the exported filenames (helmets export at 1024Ã—1024)" aria-label="Paint target">
       <option value="car">Car</option>
       <option value="helmet">Helmet</option>
       <option value="suit">Suit</option>
     </select>
     <label class="custid-label" for="custid">iRacing ID</label>
     <input id="custid" class="custid" type="text" inputmode="numeric" placeholder="123456" spellcheck="false">
-    <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints/<car> folder once — Clearcoat remembers it">Link Folder</button>
-    <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder (your existing paint is snapshotted to clearcoat-backup/ first) — the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
-    <label class="tb-check" title="iRacing Custom Number paints use car_num_<id>.tga instead of car_<id>.tga — check this if your number is part of the paint"><input type="checkbox" id="custom-number"> Custom&nbsp;#</label>
+    <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints/<car> folder once â€” Clearcoat remembers it">Link Folder</button>
+    <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder (your existing paint is snapshotted to clearcoat-backup/ first) â€” the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
+    <label class="tb-check" title="iRacing Custom Number paints use car_num_<id>.tga instead of car_<id>.tga â€” check this if your number is part of the paint"><input type="checkbox" id="custom-number"> Custom&nbsp;#</label>
     <button id="btn-restore-original" class="tb-btn" title="Put the snapshotted original paint (e.g. your Trading Paints livery) back" hidden>Restore</button>
-    <button id="btn-get-mips" class="tb-btn" title="Download the sim-generated .mip files from the linked folder — needed to upload a custom spec map to Trading Paints. Save to iRacing first, then open the sim showroom once so it generates them." disabled>Get MIPs</button>
+    <button id="btn-get-mips" class="tb-btn" title="Download the sim-generated .mip files from the linked folder â€” needed to upload a custom spec map to Trading Paints. Save to iRacing first, then open the sim showroom once so it generates them." disabled>Get MIPs</button>
   </div>
 
   <div class="topbar-group divider">
     <button id="btn-export-tga" class="tb-btn" title="Download paint + spec map as TGA">Export TGA</button>
     <button id="btn-export-png" class="tb-btn" title="Download paint as PNG">Export PNG</button>
-    <a class="tb-btn support-btn" href="https://ko-fi.com/metalprophecymedia" target="_blank" rel="noopener" title="Clearcoat is free — tips keep it growing">♥ Support</a>
+    <a class="tb-btn support-btn" href="https://ko-fi.com/metalprophecymedia" target="_blank" rel="noopener" title="Clearcoat is free â€” tips keep it growing">â™¥ Support</a>
   </div>
 </header>
 
@@ -63,8 +63,8 @@
     <section class="panel-block">
       <h2 class="panel-title">Template</h2>
       <div class="template-row">
-        <button id="btn-load-template" class="sm-btn wide">Load template (PSD/PNG)…</button>
-        <button id="btn-clear-template" class="sm-btn icon" title="Remove template" hidden>✕</button>
+        <button id="btn-load-template" class="sm-btn wide">Load template (PSD/PNG)â€¦</button>
+        <button id="btn-clear-template" class="sm-btn icon" title="Remove template" hidden>âœ•</button>
       </div>
       <div class="slider-row" id="template-opacity-row" hidden>
         <label for="template-opacity">Overlay</label>
@@ -81,15 +81,15 @@
         <label class="tpl-bold"><input type="checkbox" id="template-bold" checked> Bold</label>
       </div>
       <div class="template-row" style="margin-top:8px">
-        <button id="btn-load-regions" class="sm-btn wide" title="Load a region map (.json) — labels the sheet's panels for hover labels, the Regions overlay, and one-click Mirror">Load region map…</button>
-        <button id="btn-clear-regions" class="sm-btn icon" title="Remove region map" hidden>✕</button>
+        <button id="btn-load-regions" class="sm-btn wide" title="Load a region map (.json) â€” labels the sheet's panels for hover labels, the Regions overlay, and one-click Mirror">Load region mapâ€¦</button>
+        <button id="btn-clear-regions" class="sm-btn icon" title="Remove region map" hidden>âœ•</button>
       </div>
       <div class="template-row" id="region-map-info" style="margin-top:6px; align-items:center" hidden>
         <span class="hint" id="region-map-name" style="margin:0; flex:1"></span>
-        <button id="btn-export-regions" class="sm-btn" title="Download this region map as JSON — share it so others get labels for the same car">Export map</button>
+        <button id="btn-export-regions" class="sm-btn" title="Download this region map as JSON â€” share it so others get labels for the same car">Export map</button>
       </div>
-      <p class="hint">Load your car's official iRacing template <b>PSD</b> directly — Clearcoat extracts the wireframe for you. PNG/JPG work too. Shown for reference only, never exported.</p>
-      <p class="hint"><a href="https://www.tradingpaints.com/cartemplates" target="_blank" rel="noopener">Get your car's template ↗</a> (or in-sim: My Content → Car Manager → Download Template)</p>
+      <p class="hint">Load your car's official iRacing template <b>PSD</b> directly â€” Clearcoat extracts the wireframe for you. PNG/JPG work too. Shown for reference only, never exported.</p>
+      <p class="hint"><a href="https://www.tradingpaints.com/cartemplates" target="_blank" rel="noopener">Get your car's template â†—</a> (or in-sim: My Content â†’ Car Manager â†’ Download Template)</p>
     </section>
 
     <section class="panel-block grow">
@@ -97,15 +97,15 @@
         <span class="title-actions">
           <button id="btn-add-image" class="sm-btn" title="Add an image layer (logo, decal, artwork)">+ Image</button>
           <button id="btn-add-pattern" class="sm-btn" title="Add a seamless texture as a tiling fill over a resizable region">+ Pattern</button>
-          <button id="btn-add-fill" class="sm-btn" title="Add a solid-color material patch — a resizable rectangle with its own color, material, and tuning (e.g. a pearl panel)">+ Fill</button>
-          <button id="btn-add-text" class="sm-btn" title="Add a text layer — driver name, car number, sponsor wordmark">+ Text</button>
-          <button id="btn-add-library" class="sm-btn" title="Insert a ready-made racing graphic — roundels, stripes, flames — then recolor it with the material Tint">+ Library</button>
+          <button id="btn-add-fill" class="sm-btn" title="Add a solid-color material patch â€” a resizable rectangle with its own color, material, and tuning (e.g. a pearl panel)">+ Fill</button>
+          <button id="btn-add-text" class="sm-btn" title="Add a text layer â€” driver name, car number, sponsor wordmark">+ Text</button>
+          <button id="btn-add-library" class="sm-btn" title="Insert a ready-made racing graphic â€” roundels, stripes, flames â€” then recolor it with the material Tint">+ Library</button>
         </span>
       </h2>
-      <p class="hint" style="margin-top:0">Patterns tile a resizable region (default: the whole sheet) — drag its corners to cover just the hood, a stripe, etc. Generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro ↗</a> (use its seamless export), then add them here.</p>
-      <button id="btn-import-paint" class="sm-btn wide" title="Read car_<id>.tga from the linked folder (your Trading Paints livery) into the editor as a full-sheet layer">Import current car paint…</button>
+      <p class="hint" style="margin-top:0">Patterns tile a resizable region (default: the whole sheet) â€” drag its corners to cover just the hood, a stripe, etc. Generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro â†—</a> (use its seamless export), then add them here.</p>
+      <button id="btn-import-paint" class="sm-btn wide" title="Read car_<id>.tga from the linked folder (your Trading Paints livery) into the editor as a full-sheet layer">Import current car paintâ€¦</button>
       <ul id="layer-list" class="layer-list" role="listbox" aria-label="Layers"></ul>
-      <div class="basecoat-row" id="basecoat-row" title="Base coat — the bottom of every livery">
+      <div class="basecoat-row" id="basecoat-row" title="Base coat â€” the bottom of every livery">
         <input type="color" id="basecoat-color" value="#1a6cff" aria-label="Base coat color">
         <span class="basecoat-label">Base coat</span>
         <span class="material-chip" id="basecoat-material-chip">gloss</span>
@@ -118,11 +118,11 @@
     <canvas id="viewport"></canvas>
     <div id="viewport-hud">
       <button id="btn-fit" class="hud-btn" title="Fit to window (F)">Fit</button>
-      <button id="btn-zoom-out" class="hud-btn" title="Zoom out (-)">−</button>
+      <button id="btn-zoom-out" class="hud-btn" title="Zoom out (-)">âˆ’</button>
       <span id="zoom-readout" class="mono hud-readout">100%</span>
       <button id="btn-zoom-in" class="hud-btn" title="Zoom in (+)">+</button>
       <span class="hud-sep"></span>
-      <button id="btn-wand" class="hud-btn toggle" title="Magic wand — click the livery to select a contiguous color region, Shift+click to select that color everywhere. The selection becomes a material-only layer: give it pearl/candy/flake without repainting. (W)">Wand</button>
+      <button id="btn-wand" class="hud-btn toggle" title="Magic wand â€” click the livery to select a contiguous color region, Shift+click to select that color everywhere. The selection becomes a material-only layer: give it pearl/candy/flake without repainting. (W)">Wand</button>
       <span id="wand-tol-row" hidden>
         <label for="wand-tol" class="hud-readout" style="min-width:auto">Tol</label>
         <input id="wand-tol" type="range" min="0" max="100" value="30" style="width:70px; accent-color: var(--cyan);">
@@ -132,16 +132,16 @@
       </span>
       <span class="hud-sep"></span>
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
-      <button id="btn-shine-view" class="hud-btn toggle" title="Sweep a light across the livery to preview finishes — gloss flashes, flake sparkles, ghost layers appear (L)">Shine</button>
+      <button id="btn-shine-view" class="hud-btn toggle" title="Sweep a light across the livery to preview finishes â€” gloss flashes, flake sparkles, ghost layers appear (L)">Shine</button>
       <button id="btn-regions-view" class="hud-btn toggle" title="Show the region map's rectangles and panel names over the sheet" disabled>Regions</button>
       <span class="hud-sep"></span>
-      <button id="btn-annotate" class="hud-btn toggle warn" title="Annotate mode — drag rectangles over the sheet to label panels and record mirror pairs, building a region map for this car">Annotate</button>
+      <button id="btn-annotate" class="hud-btn toggle warn" title="Annotate mode â€” drag rectangles over the sheet to label panels and record mirror pairs, building a region map for this car">Annotate</button>
       <span class="hud-sep"></span>
       <button id="btn-help" class="hud-btn" title="How Clearcoat works + shortcuts (F1)">?</button>
     </div>
     <div id="drop-cue" hidden><span>Drop image to add layer</span></div>
     <div id="spec-legend" hidden>
-      <b>Spec map</b> — these colors are material data, not paint:
+      <b>Spec map</b> â€” these colors are material data, not paint:
       <span class="leg r">R&nbsp;metallic</span>
       <span class="leg g">G&nbsp;roughness</span>
       <span class="leg b">B&nbsp;clearcoat</span>
@@ -184,7 +184,7 @@
           <option value="linear">Linear</option>
           <option value="radial">Radial</option>
         </select>
-        <input id="ins-fill-angle" type="number" step="1" min="0" max="360" class="tune-num mono" title="Gradient angle in degrees — 0 = left → right" aria-label="Gradient angle" hidden>
+        <input id="ins-fill-angle" type="number" step="1" min="0" max="360" class="tune-num mono" title="Gradient angle in degrees â€” 0 = left â†’ right" aria-label="Gradient angle" hidden>
       </div>
 
       <div class="slider-row">
@@ -193,7 +193,7 @@
         <span class="mono" id="ins-opacity-val">100%</span>
       </div>
 
-      <label class="tb-check" style="margin-top:10px" title="Don't paint this layer's color — only stamp its material into the spec map. Use over an imported livery to give parts of the existing design a finish (pearl, candy, flake…) without repainting them.">
+      <label class="tb-check" style="margin-top:10px" title="Don't paint this layer's color â€” only stamp its material into the spec map. Use over an imported livery to give parts of the existing design a finish (pearl, candy, flakeâ€¦) without repainting them.">
         <input type="checkbox" id="ins-spec-only"> Material only (don't paint)
       </label>
 
@@ -228,7 +228,7 @@
             <optgroup label="Custom" id="font-group-custom"></optgroup>
           </select>
         </div>
-        <button id="btn-upload-font" class="sm-btn wide" title="Add a .ttf/.otf/.woff font from your computer — it's embedded in the project file">Upload font…</button>
+        <button id="btn-upload-font" class="sm-btn wide" title="Add a .ttf/.otf/.woff font from your computer â€” it's embedded in the project file">Upload fontâ€¦</button>
         <div class="xform-grid text-grid">
           <label>Size <input id="ins-text-size" type="number" step="1" min="40" max="400" class="mono"></label>
           <label>Spacing <input id="ins-text-spacing" type="number" step="1" min="0" max="40" class="mono"></label>
@@ -257,14 +257,14 @@
       <div class="btn-row">
         <button id="ins-flip-h" class="sm-btn" title="Flip horizontally">Flip H</button>
         <button id="ins-flip-v" class="sm-btn" title="Flip vertically">Flip V</button>
-        <button id="ins-mirror" class="sm-btn" title="Duplicate this layer mirrored onto the partner panel — needs a region map with the layer's center inside a mirrored region" disabled>Mirror</button>
+        <button id="ins-mirror" class="sm-btn" title="Duplicate this layer mirrored onto the partner panel â€” needs a region map with the layer's center inside a mirrored region" disabled>Mirror</button>
         <button id="ins-duplicate" class="sm-btn" title="Duplicate layer (Ctrl+D)">Duplicate</button>
         <button id="ins-delete" class="sm-btn danger" title="Delete layer (Del)">Delete</button>
       </div>
     </section>
 
     <section class="panel-block" id="inspector-material" hidden>
-      <h3 class="sub-title">Material <span class="hint-inline">→ spec map</span></h3>
+      <h3 class="sub-title">Material <span class="hint-inline">â†’ spec map</span></h3>
       <div class="material-grid" id="material-grid"></div>
       <h3 class="sub-title">Fine-tune <span class="title-actions"><button id="tune-reset" class="sm-btn" title="Back to this material's preset values">Reset</button></span></h3>
       <div id="material-tune">
@@ -274,7 +274,7 @@
         <div class="slider-row"><label for="tune-density">Density</label><input id="tune-density" type="range" min="1" max="60"><input id="tune-density-n" type="number" class="tune-num mono" min="1" max="60"></div>
         <div class="slider-row"><label for="tune-scale">Scale</label><input id="tune-scale" type="range" min="1" max="64"><input id="tune-scale-n" type="number" class="tune-num mono" min="1" max="64"></div>
         <div class="slider-row"><label for="tune-contrast">Contrast</label><input id="tune-contrast" type="range" min="0" max="200"><input id="tune-contrast-n" type="number" class="tune-num mono" min="0" max="200"></div>
-        <div class="slider-row"><label for="tune-tint" title="Color wash over this layer's paint — metallic finishes color their reflections from the paint, so this shifts what pearl/candy/flake read as">Tint</label><input id="tune-tint" type="color" value="#ffffff"><input id="tune-tintamt" type="range" min="0" max="100"><input id="tune-tintamt-n" type="number" class="tune-num mono" min="0" max="100"></div>
+        <div class="slider-row"><label for="tune-tint" title="Color wash over this layer's paint â€” metallic finishes color their reflections from the paint, so this shifts what pearl/candy/flake read as">Tint</label><input id="tune-tint" type="color" value="#ffffff"><input id="tune-tintamt" type="range" min="0" max="100"><input id="tune-tintamt-n" type="number" class="tune-num mono" min="0" max="100"></div>
         <div class="slider-row" id="tune-stack-row"><label for="tune-stack" title="How this layer's spec stamps over what's beneath: Replace overwrites, Add compounds coats (e.g. stacked pearl), Multiply darkens">Stack</label>
           <select id="tune-stack" class="tune-select">
             <option value="replace">Replace</option>
@@ -283,7 +283,7 @@
           </select>
         </div>
       </div>
-      <p class="hint">Materials are baked into the spec map — toggle <b>Spec view</b> to inspect it, or <b>Shine</b> to watch the finish react to light. Tuned values save with the project; verify in the iRacing showroom.</p>
+      <p class="hint">Materials are baked into the spec map â€” toggle <b>Spec view</b> to inspect it, or <b>Shine</b> to watch the finish react to light. Tuned values save with the project; verify in the iRacing showroom.</p>
     </section>
 
     <section class="panel-block" id="inspector-basecoat" hidden>
@@ -309,25 +309,25 @@
     <span id="status-fs" class="mono"></span>
     <span id="status-autosave" class="mono"></span>
     <span id="status-pos" class="mono"></span>
-    <a class="support-link" href="https://ko-fi.com/metalprophecymedia" target="_blank" rel="noopener" title="Clearcoat is free — tips keep it growing">♥ Support Clearcoat</a>
+    <a class="support-link" href="https://ko-fi.com/metalprophecymedia" target="_blank" rel="noopener" title="Clearcoat is free â€” tips keep it growing">â™¥ Support Clearcoat</a>
   </span>
 </footer>
 
 <div id="help-modal" hidden>
   <div class="library-panel help-panel">
     <h2 class="panel-title">How Clearcoat works
-      <span class="title-actions"><button id="help-close" class="sm-btn icon" title="Close (Esc)">✕</button></span>
+      <span class="title-actions"><button id="help-close" class="sm-btn icon" title="Close (Esc)">âœ•</button></span>
     </h2>
     <div class="help-cols">
       <div>
         <h3 class="sub-title">The workflow</h3>
         <ol class="help-steps">
-          <li><b>Load your car's template PSD</b> (left panel) — Clearcoat extracts the wireframe so you can see where panels are.</li>
-          <li><b>Build layers</b> — <b>+ Image</b> for logos, <b>+ Text</b> for names/numbers, <b>+ Fill</b> for shapes &amp; gradients, <b>+ Pattern</b> for SimTex textures, <b>+ Library</b> for ready-made graphics. Or <b>Import current car paint</b> to start from your Trading Paints livery.</li>
-          <li><b>Give every layer a finish</b> — click a layer, pick a material (pearl, candy, flake…), fine-tune it. <i>The Base coat row at the bottom of the layer list is clickable too</i> — that's how the whole car gets a material.</li>
-          <li><b>Wand (W)</b> — click a color on the livery to select it (Shift+click = that color everywhere). Give the selection a finish, or check <b>Recolor</b> first to repaint it.</li>
-          <li><b>Preview</b> — <b>Shine (L)</b> sweeps a light across the sheet so finishes show; <b>Spec view (S)</b> shows the raw material data.</li>
-          <li><b>Save to iRacing</b> — link your paints folder once, keep the sim showroom open, and every save appears on the real car in seconds. Your Trading Paints file is backed up automatically; <b>Restore</b> brings it back.</li>
+          <li><b>Load your car's template PSD</b> (left panel) â€” Clearcoat extracts the wireframe so you can see where panels are.</li>
+          <li><b>Build layers</b> â€” <b>+ Image</b> for logos, <b>+ Text</b> for names/numbers, <b>+ Fill</b> for shapes &amp; gradients, <b>+ Pattern</b> for SimTex textures, <b>+ Library</b> for ready-made graphics. Or <b>Import current car paint</b> to start from your Trading Paints livery.</li>
+          <li><b>Give every layer a finish</b> â€” click a layer, pick a material (pearl, candy, flakeâ€¦), fine-tune it. <i>The Base coat row at the bottom of the layer list is clickable too</i> â€” that's how the whole car gets a material.</li>
+          <li><b>Wand (W)</b> â€” click a color on the livery to select it (Shift+click = that color everywhere). Give the selection a finish, or check <b>Recolor</b> first to repaint it.</li>
+          <li><b>Preview</b> â€” <b>Shine (L)</b> sweeps a light across the sheet so finishes show; <b>Spec view (S)</b> shows the raw material data.</li>
+          <li><b>Save to iRacing</b> â€” link your paints folder once, keep the sim showroom open, and every save appears on the real car in seconds. Your Trading Paints file is backed up automatically; <b>Restore</b> brings it back.</li>
         </ol>
       </div>
       <div>
@@ -341,18 +341,18 @@
           <tr><td class="mono">Del</td><td>Delete layer</td></tr>
           <tr><td class="mono">Arrows (+Shift)</td><td>Nudge 1px (10px)</td></tr>
           <tr><td class="mono">Ctrl+click</td><td>Multi-select in layer list</td></tr>
-          <tr><td class="mono">Shift</td><td>Snap rotation 15°</td></tr>
+          <tr><td class="mono">Shift</td><td>Snap rotation 15Â°</td></tr>
           <tr><td class="mono">Scroll / Space-drag</td><td>Zoom / pan</td></tr>
           <tr><td class="mono">Esc</td><td>Exit tool / deselect</td></tr>
         </table>
         <h3 class="sub-title">Good to know</h3>
         <ul class="help-tips">
-          <li>🔒 <b>Lock</b> a full-sheet layer (imported liveries auto-lock) so clicks pass through it.</li>
-          <li>⧉ duplicates a layer right from its row.</li>
-          <li><b>Material only</b> stamps a finish without painting — pearl on existing artwork.</li>
+          <li>ðŸ”’ <b>Lock</b> a full-sheet layer (imported liveries auto-lock) so clicks pass through it.</li>
+          <li>â§‰ duplicates a layer right from its row.</li>
+          <li><b>Material only</b> stamps a finish without painting â€” pearl on existing artwork.</li>
           <li>Click the same spot repeatedly to cycle through stacked layers.</li>
-          <li><b>Region maps</b> label the sheet's panels (Template panel) — hover shows where you are, <b>Regions</b> overlays the map, and <b>Mirror</b> drops a flipped copy of a layer onto the partner panel. Build your own map with <b>Annotate</b>.</li>
-          <li>Seeing something odd? Check the <b>version number</b> top-left and hard-refresh (Ctrl+F5) — the site caches for ~10 min after updates.</li>
+          <li><b>Region maps</b> label the sheet's panels (Template panel) â€” hover shows where you are, <b>Regions</b> overlays the map, and <b>Mirror</b> drops a flipped copy of a layer onto the partner panel. Build your own map with <b>Annotate</b>.</li>
+          <li>Seeing something odd? Check the <b>version number</b> top-left and hard-refresh (Ctrl+F5) â€” the site caches for ~10 min after updates.</li>
           <li>Live save needs Chrome/Edge (Brave: enable File System Access in brave://flags).</li>
         </ul>
       </div>
@@ -363,7 +363,7 @@
 <div id="library-modal" hidden>
   <div class="library-panel">
     <h2 class="panel-title">Graphics library
-      <span class="title-actions"><button id="library-close" class="sm-btn icon" title="Close (Esc)">✕</button></span>
+      <span class="title-actions"><button id="library-close" class="sm-btn icon" title="Close (Esc)">âœ•</button></span>
     </h2>
     <p class="hint" style="margin-top:0">Click a graphic to insert it as an image layer, then recolor it with the material <b>Tint</b> in the inspector.</p>
     <div id="library-grid" class="library-grid"></div>
@@ -381,3 +381,4 @@
 <script type="module" src="js/main.js"></script>
 </body>
 </html>
+
