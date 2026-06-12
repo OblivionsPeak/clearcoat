@@ -522,12 +522,14 @@ function syncInspector() {
     document.querySelector('.xform-grid').hidden = sel.type === 'fill';
     $('ins-flip-h').hidden = $('ins-flip-v').hidden = sel.type === 'fill';
     if (sel.type === 'fill') $('ins-fill-color').value = sel.color;
-    for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation']]) {
+    for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
       const el = $(id);
       if (document.activeElement !== el) {
-        el.value = prop === 'scale' ? sel[prop].toFixed(3) : Math.round(sel[prop] * 10) / 10;
+        el.value = prop === 'scale' ? sel[prop].toFixed(3) : Math.round((sel[prop] || 0) * 10) / 10;
       }
     }
+    // skew only makes sense for image layers (patterns/fills are regions)
+    $('ins-skx-wrap').hidden = $('ins-sky-wrap').hidden = sel.type !== 'image';
   }
   if (isBase) syncBaseColorFields();
   syncMaterialGrid();
@@ -695,12 +697,14 @@ $('ins-opacity').addEventListener('input', () => {
   $('ins-opacity-val').textContent = $('ins-opacity').value + '%';
   markDirty();
 });
-for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation']]) {
+for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
   $(id).addEventListener('input', () => {
     const sel = selectedLayer(); if (!sel) return;
     const v = parseFloat($(id).value);
     if (!Number.isFinite(v)) return;
-    sel[prop] = prop === 'scale' ? Math.max(0.01, v) : v;
+    if (prop === 'scale') sel[prop] = Math.max(0.01, v);
+    else if (prop === 'skewX' || prop === 'skewY') sel[prop] = Math.max(-80, Math.min(80, v));
+    else sel[prop] = v;
     markDirty();
   });
 }
@@ -966,8 +970,11 @@ $('btn-export-tga').addEventListener('click', () => {
 async function refreshFsStatus() {
   if (!persist.fsSupported()) {
     $('status-fs').textContent = 'live save needs Chrome/Edge';
+    const why = 'This browser does not expose the File System Access API. Use Chrome or Edge; in Brave enable it via brave://flags ("File System Access API"). Firefox/Safari cannot link folders — use Export TGA instead.';
     $('btn-link-folder').disabled = true;
+    $('btn-link-folder').title = why;
     $('btn-save-iracing').disabled = true;
+    $('btn-save-iracing').title = why;
     return;
   }
   const handle = await persist.getPaintsFolder().catch(() => null);

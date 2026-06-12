@@ -144,9 +144,22 @@ export function createImageLayer(img, src, name) {
     y: SIZE / 2,
     scale: fit,
     rotation: 0,   // degrees
+    skewX: 0,      // degrees
+    skewY: 0,
     flipH: false,
     flipV: false,
   };
+}
+
+// full local→doc transform for an image layer (skew sits between rotation
+// and scale so its angles act on the unscaled axes)
+export function layerMatrix(l) {
+  return new DOMMatrix()
+    .translate(l.x, l.y)
+    .rotate(l.rotation)
+    .skewX(l.skewX || 0)
+    .skewY(l.skewY || 0)
+    .scale(l.scale * (l.flipH ? -1 : 1), l.scale * (l.flipV ? -1 : 1));
 }
 
 export function createPatternLayer(img, src, name) {
@@ -211,9 +224,8 @@ function drawLayer(ctx, layer) {
     ctx.fillStyle = pat;
     ctx.fillRect(layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE);
   } else {
-    ctx.translate(layer.x, layer.y);
-    ctx.rotate(layer.rotation * Math.PI / 180);
-    ctx.scale(layer.scale * (layer.flipH ? -1 : 1), layer.scale * (layer.flipV ? -1 : 1));
+    const m = layerMatrix(layer);
+    ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
     ctx.drawImage(layer.img, -layer.img.width / 2, -layer.img.height / 2);
   }
   ctx.restore();
@@ -382,15 +394,8 @@ export function hitTest(doc, px, py) {
 }
 
 export function toLocal(layer, px, py) {
-  const dx = px - layer.x;
-  const dy = py - layer.y;
-  const rad = -layer.rotation * Math.PI / 180;
-  const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
-  const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
-  return {
-    x: rx / (layer.scale * (layer.flipH ? -1 : 1)),
-    y: ry / (layer.scale * (layer.flipV ? -1 : 1)),
-  };
+  const pt = layerMatrix(layer).inverse().transformPoint(new DOMPoint(px, py));
+  return { x: pt.x, y: pt.y };
 }
 
 // corner positions of a layer in doc space (for selection box / handles)
@@ -399,15 +404,13 @@ export function layerCorners(layer) {
     const { rx = 0, ry = 0, rw = SIZE, rh = SIZE } = layer;
     return [{ x: rx, y: ry }, { x: rx + rw, y: ry }, { x: rx + rw, y: ry + rh }, { x: rx, y: ry + rh }];
   }
-  const hw = layer.img.width / 2 * layer.scale;
-  const hh = layer.img.height / 2 * layer.scale;
-  const rad = layer.rotation * Math.PI / 180;
-  const cos = Math.cos(rad), sin = Math.sin(rad);
-  const pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
-  return pts.map(([x, y]) => ({
-    x: layer.x + x * cos - y * sin,
-    y: layer.y + x * sin + y * cos,
-  }));
+  const hw = layer.img.width / 2;
+  const hh = layer.img.height / 2;
+  const m = layerMatrix(layer);
+  return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => {
+    const pt = m.transformPoint(new DOMPoint(x, y));
+    return { x: pt.x, y: pt.y };
+  });
 }
 
 // ---------- (de)serialization ----------
@@ -431,6 +434,7 @@ export function serializeDoc(doc) {
       color: l.color,
       src: l.src,
       x: l.x, y: l.y, scale: l.scale, rotation: l.rotation,
+      skewX: l.skewX || 0, skewY: l.skewY || 0,
       flipH: l.flipH, flipV: l.flipV,
       rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
     })),
@@ -486,6 +490,7 @@ export async function deserializeDoc(data) {
         img, src: l.src,
         x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
         scale: l.scale ?? 1, rotation: l.rotation ?? 0,
+        skewX: l.skewX ?? 0, skewY: l.skewY ?? 0,
         flipH: !!l.flipH, flipV: !!l.flipV,
         rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
       });
