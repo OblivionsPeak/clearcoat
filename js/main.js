@@ -1,6 +1,6 @@
 import {
   SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, createFillLayer,
-  createTextLayer, regenerateText,
+  createTextLayer, regenerateText, GOOGLE_FONTS, registerCustomFont,
   renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
   serializeDoc, deserializeDoc, loadImage,
   templateOverlay, defaultParams, resolveParams, mixHex,
@@ -863,8 +863,102 @@ function setTextProp(prop, value) {
   markDirty();
 }
 
+// ---------- fonts ----------
+
+// Google fonts load on demand — one stylesheet injection per family, cached
+const googleFontLoads = new Map();
+function loadGoogleFont(family) {
+  if (googleFontLoads.has(family)) return googleFontLoads.get(family);
+  const p = (async () => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=' + family.replace(/ /g, '+') + '&display=swap';
+    await new Promise((resolve, reject) => {
+      link.onload = resolve;
+      link.onerror = () => reject(new Error('stylesheet unreachable'));
+      document.head.appendChild(link);
+    });
+    await document.fonts.load(`160px "${family}"`);
+    if (!document.fonts.check(`160px "${family}"`)) throw new Error('font not available');
+  })();
+  googleFontLoads.set(family, p);
+  p.catch(() => googleFontLoads.delete(family)); // failed (offline?) — allow a later retry
+  return p;
+}
+
+// re-rasterize every text layer using a family once it becomes available
+function regenerateFontUsers(family) {
+  let touched = false;
+  for (const l of doc.layers) {
+    if (l.type === 'text' && l.font === family) { regenerateText(l); touched = true; }
+  }
+  if (touched) { rebuildLayerList(); syncMaterialGrid(); markDirty(); }
+}
+
+function requestGoogleFont(family) {
+  loadGoogleFont(family)
+    .then(() => regenerateFontUsers(family))
+    .catch(() => status(`Couldn't load Google font "${family}" — using a fallback face.`, 'err'));
+}
+
+// non-blocking: kick off loads for any Google fonts the doc's text layers use
+function ensureDocFonts() {
+  const families = new Set(doc.layers.filter(l => l.type === 'text').map(l => l.font));
+  for (const family of families) {
+    if (GOOGLE_FONTS.includes(family)) requestGoogleFont(family);
+  }
+}
+
+// the Custom optgroup mirrors doc.customFonts; System/Google options are static
+function rebuildFontSelect() {
+  const group = $('font-group-custom');
+  group.innerHTML = '';
+  for (const f of (doc.customFonts || [])) {
+    const opt = document.createElement('option');
+    opt.textContent = f.name;
+    group.appendChild(opt);
+  }
+  const sel = selectedLayer();
+  if (sel && sel.type === 'text') $('ins-text-font').value = sel.font;
+}
+
+function bufferToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
+}
+
+$('btn-upload-font').addEventListener('click', () => $('file-font').click());
+$('file-font').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 4 * 1024 * 1024) { status('Font file too large — 4 MB max.', 'err'); return; }
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/[^\w \-]+/g, ' ').trim() || 'custom font';
+  try {
+    const data = bufferToBase64(await file.arrayBuffer());
+    await registerCustomFont(name, data);
+    doc.customFonts = (doc.customFonts || []).filter(f => f.name !== name); // re-upload replaces
+    doc.customFonts.push({ name, data });
+    rebuildFontSelect();
+    const sel = selectedLayer();
+    if (sel && sel.type === 'text') setTextProp('font', name);
+    else scheduleAutosave();
+    status(`Font "${name}" added — saved with the project.`, 'ok');
+  } catch {
+    status('That file is not a usable font.', 'err');
+  }
+});
+
 $('ins-text').addEventListener('input', () => setTextProp('text', $('ins-text').value));
-$('ins-text-font').addEventListener('change', () => setTextProp('font', $('ins-text-font').value));
+$('ins-text-font').addEventListener('change', () => {
+  const family = $('ins-text-font').value;
+  setTextProp('font', family);
+  if (GOOGLE_FONTS.includes(family)) requestGoogleFont(family);
+});
 $('ins-text-color').addEventListener('input', () => setTextProp('textColor', $('ins-text-color').value));
 $('ins-text-outline-color').addEventListener('input', () => setTextProp('outlineColor', $('ins-text-outline-color').value));
 $('ins-text-italic').addEventListener('change', () => setTextProp('italic', $('ins-text-italic').checked));
@@ -980,6 +1074,13 @@ function afterDocLoad() {
   $('template-opacity-val').textContent = Math.round(doc.templateOpacity * 100) + '%';
   syncTemplateStyle();
   $('basecoat-color').value = doc.baseColor;
+  rebuildFontSelect();
+  ensureDocFonts();
+  if (doc.fontWarnings?.length) {
+    const failed = doc.fontWarnings.join(', ');
+    // deferred so it lands after the caller's own "Opened…" status
+    setTimeout(() => status(`Custom font failed to load: ${failed} — using a fallback face.`, 'err'), 0);
+  }
   rebuildLayerList();
   syncInspector();
   fitView();

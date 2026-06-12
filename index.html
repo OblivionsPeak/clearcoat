@@ -146,14 +146,32 @@
         <div class="slider-row">
           <label for="ins-text-font">Font</label>
           <select id="ins-text-font" class="tune-select">
-            <option>Arial Black</option>
-            <option>Impact</option>
-            <option>Georgia</option>
-            <option>Courier New</option>
-            <option>Verdana</option>
-            <option>Trebuchet MS</option>
+            <optgroup label="System">
+              <option>Arial Black</option>
+              <option>Impact</option>
+              <option>Georgia</option>
+              <option>Courier New</option>
+              <option>Verdana</option>
+              <option>Trebuchet MS</option>
+            </optgroup>
+            <optgroup label="Google Fonts">
+              <option>Anton</option>
+              <option>Archivo Black</option>
+              <option>Bebas Neue</option>
+              <option>Black Ops One</option>
+              <option>Bungee</option>
+              <option>Faster One</option>
+              <option>Monoton</option>
+              <option>Orbitron</option>
+              <option>Oswald</option>
+              <option>Permanent Marker</option>
+              <option>Racing Sans One</option>
+              <option>Russo One</option>
+            </optgroup>
+            <optgroup label="Custom" id="font-group-custom"></optgroup>
           </select>
         </div>
+        <button id="btn-upload-font" class="sm-btn wide" title="Add a .ttf/.otf/.woff font from your computer — it's embedded in the project file">Upload font…</button>
         <div class="xform-grid text-grid">
           <label>Size <input id="ins-text-size" type="number" step="1" min="40" max="400" class="mono"></label>
           <label>Spacing <input id="ins-text-spacing" type="number" step="1" min="0" max="40" class="mono"></label>
@@ -241,6 +259,7 @@
 <input type="file" id="file-tga" accept=".tga" hidden>
 <input type="file" id="file-template" accept=".psd,image/png,image/jpeg,image/webp,image/vnd.adobe.photoshop" hidden>
 <input type="file" id="file-project" accept=".json,application/json" hidden>
+<input type="file" id="file-font" accept=".ttf,.otf,.woff,.woff2" hidden>
 
 <script type="module" src="js/main.js"></script>
 </body>
