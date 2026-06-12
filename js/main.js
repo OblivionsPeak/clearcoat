@@ -1029,10 +1029,12 @@ async function refreshFsStatus() {
   if (handle) {
     $('status-fs').textContent = '📁 ' + handle.name;
     $('btn-save-iracing').disabled = false;
+    $('btn-get-mips').disabled = false;
     refreshRestoreButton(handle, $('custid').value.trim()).catch(() => {});
   } else {
     $('status-fs').textContent = 'no folder linked';
     $('btn-save-iracing').disabled = true;
+    $('btn-get-mips').disabled = true;
     $('btn-restore-original').hidden = true;
   }
 }
@@ -1045,8 +1047,10 @@ $('btn-link-folder').addEventListener('click', async () => {
   refreshFsStatus();
 });
 
+// Custom Number paints use the car_num_ prefix; the spec name never changes
 function paintFilenames(custid) {
-  return [`car_${custid}.tga`, `car_spec_${custid}.tga`];
+  const num = $('custom-number').checked;
+  return [`car_${num ? 'num_' : ''}${custid}.tga`, `car_spec_${custid}.tga`];
 }
 
 function validCustid() {
@@ -1097,13 +1101,14 @@ $('btn-save-iracing').addEventListener('click', async () => {
     const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
     if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); return; }
     const backed = await backupOriginals(handle, custid);
-    await persist.writeFileToFolder(handle, `car_${custid}.tga`, canvasToTGA(renderPaint(doc)));
-    await persist.writeFileToFolder(handle, `car_spec_${custid}.tga`, canvasToTGA(renderSpec(doc), { alpha: true }));
+    const [paintName, specName] = paintFilenames(custid);
+    await persist.writeFileToFolder(handle, paintName, canvasToTGA(renderPaint(doc)));
+    await persist.writeFileToFolder(handle, specName, canvasToTGA(renderSpec(doc), { alpha: true }));
     const btn = $('btn-save-iracing');
     btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
     status(backed
       ? `Saved — your previous paint is kept in clearcoat-backup/. Use Restore to swap back.`
-      : `Saved car_${custid}.tga + spec — check the showroom.`, 'ok');
+      : `Saved ${paintName} + spec — check the showroom.`, 'ok');
     refreshRestoreButton(handle, custid);
   } catch (err) {
     status('Write failed: ' + err.message, 'err');
@@ -1147,6 +1152,34 @@ async function addTgaAsLayer(arrayBuffer, name) {
   selectLayer(layer.id);
   markDirty();
 }
+
+$('custom-number').addEventListener('change', () => {
+  persist.saveSetting('customNumber', $('custom-number').checked).catch(() => {});
+});
+
+// Download the sim-generated .mip files — the only way to get a custom spec
+// map into Trading Paints (their servers can't create MIPs either).
+$('btn-get-mips').addEventListener('click', async () => {
+  const custid = validCustid();
+  if (!custid) return;
+  try {
+    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
+    if (!handle) { status('Link your paints folder first.', 'err'); return; }
+    const mips = (await persist.listFolder(handle))
+      .filter(n => /\.mip$/i.test(n) && n.includes(custid));
+    if (!mips.length) {
+      status('No .mip files for your ID yet — Save to iRacing, then open the sim showroom once so it generates them.', 'err');
+      return;
+    }
+    for (const n of mips) {
+      const f = await persist.readFileFromFolder(handle, n);
+      if (f) downloadBlob(f, n);
+    }
+    status(`Downloaded ${mips.length} MIP file(s) — upload the car_spec one to Trading Paints.`, 'ok');
+  } catch (err) {
+    status('MIP download failed: ' + err.message, 'err');
+  }
+});
 
 // Pull the livery currently in the folder (e.g. your Trading Paints paint)
 // into the editor as a full-sheet layer to design on top of.
@@ -1255,6 +1288,8 @@ window.addEventListener('resize', requestRender);
 
   const savedCustid = await persist.loadSetting('custid').catch(() => null);
   if (savedCustid) $('custid').value = savedCustid;
+  const customNum = await persist.loadSetting('customNumber').catch(() => null);
+  if (customNum) $('custom-number').checked = true;
 
   const auto = await persist.loadAutosave().catch(() => null);
   if (auto && (auto.layers?.length || auto.template || auto.baseColor !== '#1a6cff')) {

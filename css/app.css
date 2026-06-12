@@ -129,6 +129,12 @@ input  { font-family: inherit; }
 @keyframes save-flash { 0% { box-shadow: 0 0 0 0 rgba(255,77,0,.7); } 100% { box-shadow: 0 0 0 14px rgba(255,77,0,0); } }
 
 .custid-label { font-size: 11px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .08em; }
+.tb-check {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--ink-dim);
+  cursor: pointer; white-space: nowrap;
+}
+.tb-check input { accent-color: var(--orange); }
 .custid {
   width: 76px;
   background: var(--asphalt);

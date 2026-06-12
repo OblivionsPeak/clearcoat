@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.18</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.19</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -37,7 +37,9 @@
     <input id="custid" class="custid" type="text" inputmode="numeric" placeholder="123456" spellcheck="false">
     <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints/<car> folder once — Clearcoat remembers it">Link Folder</button>
     <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder (your existing paint is snapshotted to clearcoat-backup/ first) — the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
+    <label class="tb-check" title="iRacing Custom Number paints use car_num_<id>.tga instead of car_<id>.tga — check this if your number is part of the paint"><input type="checkbox" id="custom-number"> Custom&nbsp;#</label>
     <button id="btn-restore-original" class="tb-btn" title="Put the snapshotted original paint (e.g. your Trading Paints livery) back" hidden>Restore</button>
+    <button id="btn-get-mips" class="tb-btn" title="Download the sim-generated .mip files from the linked folder — needed to upload a custom spec map to Trading Paints. Save to iRacing first, then open the sim showroom once so it generates them." disabled>Get MIPs</button>
   </div>
 
   <div class="topbar-group divider">
