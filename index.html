@@ -134,11 +134,31 @@
       <span class="hud-sep"></span>
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
       <button id="btn-shine-view" class="hud-btn toggle" title="Sweep a light across the livery to preview finishes — gloss flashes, flake sparkles, ghost layers appear (L)">Shine</button>
+      <button id="btn-studio-view" class="hud-btn toggle" title="Studio — proof your paint + spec maps on curved 3D geometry under showroom lighting; pearl, candy, flake and chrome only read truthfully on curvature">Studio</button>
       <button id="btn-regions-view" class="hud-btn toggle" title="Show the region map's rectangles and panel names over the sheet" disabled>Regions</button>
       <span class="hud-sep"></span>
       <button id="btn-annotate" class="hud-btn toggle warn" title="Annotate mode — drag rectangles over the sheet to label panels and record mirror pairs, building a region map for this car">Annotate</button>
       <span class="hud-sep"></span>
       <button id="btn-help" class="hud-btn" title="How Clearcoat works + shortcuts (F1)">?</button>
+    </div>
+    <div id="studio-panel" hidden>
+      <div class="studio-head">
+        <span class="studio-title">Studio</span>
+        <span class="studio-sub">material proofing</span>
+        <button id="studio-close" class="sm-btn icon" title="Close Studio (Esc)">✕</button>
+      </div>
+      <div id="studio-canvas-wrap" title="Drag to orbit · scroll to zoom"></div>
+      <div class="studio-row" role="group" aria-label="Studio shape">
+        <button class="studio-opt active" data-shape="sphere" title="UV sphere — finishes under every viewing angle at once">Sphere</button>
+        <button class="studio-opt" data-shape="cylinder" title="Cylinder — your sheet wrapped around bodywork-like curvature">Cylinder</button>
+        <button class="studio-opt" data-shape="panel" title="Door panel — a gently bulged compound curve, closest to a real body panel">Panel</button>
+      </div>
+      <div class="studio-row" role="group" aria-label="Studio environment">
+        <button class="studio-opt active" data-env="showroom" title="Warm overhead key + cool floor bounce — like the iRacing showroom">Showroom</button>
+        <button class="studio-opt" data-env="neutral" title="Soft grey studio dome — judge color without lighting bias">Neutral</button>
+        <button class="studio-opt" data-env="dusk" title="Blue sky over an orange horizon — track at golden hour">Dusk</button>
+      </div>
+      <p class="hint studio-hint">Drag to orbit, scroll to zoom. Keep editing — every settled change re-wraps the geometry with your live paint + spec maps.</p>
     </div>
     <div id="drop-cue" hidden><span>Drop image to add layer</span></div>
     <div id="spec-legend" hidden>
@@ -352,6 +372,7 @@
           <li>⧉ duplicates a layer right from its row.</li>
           <li><b>Material only</b> stamps a finish without painting — pearl on existing artwork.</li>
           <li>Click the same spot repeatedly to cycle through stacked layers.</li>
+          <li><b>Studio</b> wraps your livery around 3D geometry under showroom light — the honest way to judge pearl, candy, flake and chrome, since they only read on curvature. It docks beside the canvas, so keep editing while it updates live.</li>
           <li><b>Region maps</b> label the sheet's panels (Template panel) — hover shows where you are, <b>Regions</b> overlays the map, and <b>Mirror</b> drops a flipped copy of a layer onto the partner panel. Build your own map with <b>Annotate</b>.</li>
           <li>Seeing something odd? Check the <b>version number</b> top-left and hard-refresh (Ctrl+F5) — the site caches for ~10 min after updates.</li>
           <li>Live save needs Chrome/Edge (Brave: enable File System Access in brave://flags).</li>

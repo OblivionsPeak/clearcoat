@@ -423,6 +423,55 @@ input  { font-family: inherit; }
 
 #app-version { color: var(--orange); }
 
+/* ============ STUDIO (3D material proofing) ============ */
+
+#studio-panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 380px;
+  max-width: 70%;
+  background: rgba(21, 23, 28, .96);
+  border-left: 1px solid var(--seam);
+  backdrop-filter: blur(6px);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+  z-index: 6;
+}
+.studio-head { display: flex; align-items: center; gap: 8px; }
+.studio-title {
+  font-family: var(--font-display);
+  font-size: 17px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink);
+}
+.studio-sub { flex: 1; font-size: 11px; color: var(--ink-faint); }
+#studio-canvas-wrap {
+  width: 100%;
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  background: #0b0c0f;
+  border: 1px solid var(--seam);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.studio-3d-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.studio-row { display: flex; gap: 6px; }
+.studio-opt {
+  flex: 1;
+  background: var(--panel-raise);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  padding: 6px 4px;
+  cursor: pointer;
+  transition: all .12s;
+}
+.studio-opt:hover { color: var(--ink); border-color: var(--seam-bright); }
+.studio-opt.active { color: var(--cyan); border-color: var(--cyan); }
+.studio-hint { margin: 0; }
+
 #drop-cue span {
   font-family: var(--font-display);
   font-size: 22px; font-weight: 600;

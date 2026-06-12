@@ -10,6 +10,7 @@ import { canvasToTGA, tgaToCanvas } from './tga.js';
 import { psdToTemplate } from './psd.js';
 import { renderBall, layerAlbedo } from './shaderball.js';
 import { lightSweepSupported, lightSweepFrame } from './lightsweep.js';
+import { studioSupported, openStudio, closeStudio, studioCanvas, studioSetShape, studioSetEnv } from './studio.js';
 import * as persist from './persist.js';
 import { LIBRARY, libraryItemToLayerSource } from './library.js';
 import { wandSelect } from './wand.js';
@@ -24,6 +25,8 @@ let specView = false;
 let shineView = false;
 let shineStart = 0;
 let dirty = true;             // composite needs re-render
+let studioView = false;       // Studio 3D panel open
+let studioDirty = true;       // studio textures need re-render + re-upload
 let autosaveTimer = null;
 
 const view = { x: 0, y: 0, zoom: 0.3 };   // doc → screen: screen = (doc + offset) * zoom
@@ -81,6 +84,7 @@ function requestRender() {
 
 function markDirty() {
   dirty = true;
+  studioDirty = true; // studio picks fresh maps up on its next frame
   requestRender();
   scheduleAutosave();
 }
@@ -1517,6 +1521,52 @@ function setShineView(on) {
 }
 $('btn-shine-view').addEventListener('click', () => setShineView(!shineView));
 
+// ---------- studio (3D material proofing) ----------
+// Docked panel, not a modal — editing stays live while the studio watches.
+// Maps are re-rendered only when studioDirty (set in markDirty) so the rAF
+// loop doesn't recomposite 2048² canvases every frame.
+
+function setStudioView(on) {
+  if (on && !studioSupported()) return;
+  if (on) {
+    const holder = $('studio-canvas-wrap');
+    if (!holder.childElementCount) {
+      const canvas = studioCanvas();
+      if (!canvas) { status('Studio could not start — WebGL failed.', 'err'); return; }
+      holder.appendChild(canvas);
+    }
+    studioDirty = true; // first frame always gets fresh maps
+    const ok = openStudio(() => {
+      if (!studioDirty) return { changed: false };
+      studioDirty = false;
+      return { paint: renderPaint(doc), spec: renderSpec(doc), changed: true };
+    });
+    if (!ok) { status('Studio could not start — WebGL failed.', 'err'); return; }
+  } else {
+    closeStudio();
+  }
+  studioView = on;
+  $('btn-studio-view').classList.toggle('active', on);
+  $('studio-panel').hidden = !on;
+}
+$('btn-studio-view').addEventListener('click', () => setStudioView(!studioView));
+$('studio-close').addEventListener('click', () => setStudioView(false));
+
+document.querySelectorAll('#studio-panel [data-shape]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    studioSetShape(btn.dataset.shape);
+    document.querySelectorAll('#studio-panel [data-shape]')
+      .forEach(b => b.classList.toggle('active', b === btn));
+  });
+});
+document.querySelectorAll('#studio-panel [data-env]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    studioSetEnv(btn.dataset.env);
+    document.querySelectorAll('#studio-panel [data-env]')
+      .forEach(b => b.classList.toggle('active', b === btn));
+  });
+});
+
 // ---------- project save / open / new ----------
 
 $('project-name').addEventListener('input', () => {
@@ -1956,6 +2006,7 @@ window.addEventListener('keydown', (e) => {
     if (!libraryModal.hidden) { closeLibrary(); return; }
     if (annotateMode) { setAnnotateMode(false); return; }
     if (wandMode) { setWandMode(false); return; }
+    if (studioView) { setStudioView(false); return; }
     selectLayer(null); return;
   }
   if (e.key === 'w' || e.key === 'W') { setWandMode(!wandMode); return; }
@@ -1994,6 +2045,10 @@ window.addEventListener('resize', requestRender);
   if (!lightSweepSupported()) {
     $('btn-shine-view').disabled = true;
     $('btn-shine-view').title = 'Shine preview needs WebGL';
+  }
+  if (!studioSupported()) {
+    $('btn-studio-view').disabled = true;
+    $('btn-studio-view').title = 'Studio preview needs WebGL';
   }
 
   const savedCustid = await persist.loadSetting('custid').catch(() => null);
