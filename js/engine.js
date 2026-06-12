@@ -118,6 +118,7 @@ export function newId() { return 'L' + (nextId++) + '-' + Date.now().toString(36
 export function createDoc() {
   return {
     name: 'untitled livery',
+    target: 'car',       // what this project paints: 'car' | 'helmet' | 'suit'
     baseColor: '#1a6cff',
     baseMaterial: 'gloss',
     baseMatParams: null,
@@ -569,6 +570,7 @@ export function serializeDoc(doc) {
   return {
     format: 'clearcoat/1',
     name: doc.name,
+    target: doc.target,
     baseColor: doc.baseColor,
     baseMaterial: doc.baseMaterial,
     baseMatParams: doc.baseMatParams || null,
@@ -609,6 +611,7 @@ export function loadImage(src) {
 export async function deserializeDoc(data) {
   const doc = createDoc();
   doc.name = data.name || doc.name;
+  doc.target = ['car', 'helmet', 'suit'].includes(data.target) ? data.target : 'car';
   doc.baseColor = data.baseColor || doc.baseColor;
   doc.baseMaterial = data.baseMaterial || doc.baseMaterial;
   doc.baseMatParams = data.baseMatParams || null;

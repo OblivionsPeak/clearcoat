@@ -35,6 +35,11 @@
   </div>
 
   <div class="topbar-group divider">
+    <select id="paint-target" class="custid paint-target" title="What this project paints — sets the exported filenames (helmets export at 1024×1024)" aria-label="Paint target">
+      <option value="car">Car</option>
+      <option value="helmet">Helmet</option>
+      <option value="suit">Suit</option>
+    </select>
     <label class="custid-label" for="custid">iRacing ID</label>
     <input id="custid" class="custid" type="text" inputmode="numeric" placeholder="123456" spellcheck="false">
     <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints/<car> folder once — Clearcoat remembers it">Link Folder</button>

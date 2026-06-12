@@ -146,6 +146,8 @@ input  { font-family: inherit; }
   padding: 5px 7px;
 }
 .custid:focus { outline: none; border-color: var(--seam-bright); }
+.paint-target { width: auto; cursor: pointer; }
+.tb-check.disabled { opacity: .45; cursor: default; }
 
 /* ============ WORKSPACE ============ */
 
