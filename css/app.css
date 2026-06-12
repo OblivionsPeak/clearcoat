@@ -1,5 +1,5 @@
-/* ============================================================
-   CLEARCOAT — pit-garage dark pro-tool theme
+﻿/* ============================================================
+   CLEARCOAT â€” pit-garage dark pro-tool theme
    ============================================================ */
 
 :root {
@@ -360,6 +360,7 @@ input  { font-family: inherit; }
 }
 #viewport { display: block; width: 100%; height: 100%; cursor: default; }
 #viewport.panning { cursor: grabbing; }
+#viewport.wand { cursor: crosshair; }
 #viewport.over-layer { cursor: move; }
 
 #viewport-hud {
@@ -641,3 +642,4 @@ input  { font-family: inherit; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--seam-bright); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
+

@@ -12,6 +12,7 @@ import { renderBall, layerAlbedo } from './shaderball.js';
 import { lightSweepSupported, lightSweepFrame } from './lightsweep.js';
 import * as persist from './persist.js';
 import { LIBRARY, libraryItemToLayerSource } from './library.js';
+import { wandSelect } from './wand.js';
 
 // ---------- state ----------
 
@@ -270,9 +271,55 @@ function handleAt(sx, sy) {
   return null;
 }
 
+// ---------- magic wand ----------
+
+let wandMode = false;
+
+function setWandMode(on) {
+  wandMode = on;
+  $('btn-wand').classList.toggle('active', on);
+  $('wand-tol-row').hidden = !on;
+  viewport.classList.toggle('wand', on);
+  if (on) status('Wand: click a color region — Shift+click selects that color everywhere. Esc to exit.');
+}
+$('btn-wand').addEventListener('click', () => setWandMode(!wandMode));
+$('wand-tol').addEventListener('input', () => {
+  $('wand-tol-val').textContent = $('wand-tol').value;
+});
+
+function wandClick(p, global) {
+  const tol = parseInt($('wand-tol').value, 10);
+  status('Selecting…');
+  // give the status a frame to paint before the pixel crunch
+  requestAnimationFrame(async () => {
+    const result = wandSelect(renderPaint(doc), p.x, p.y, tol, global);
+    if (!result) { status('Nothing selected — try a higher tolerance.', 'err'); return; }
+    try {
+      const img = await loadImage(result.src);
+      const layer = createImageLayer(img, result.src,
+        (global ? 'color ' : 'region ') + result.color);
+      layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = 1;
+      layer.specOnly = true; // finish-only by design — pick a material next
+      doc.layers.push(layer);
+      selectLayer(layer.id);
+      markDirty();
+      const pct = (result.count / (SIZE * SIZE) * 100).toFixed(1);
+      status(`Selected ${result.color} (${pct}% of sheet) as a material-only layer — pick a finish.`, 'ok');
+    } catch (err) {
+      status('Selection failed: ' + err.message, 'err');
+    }
+  });
+}
+
 viewport.addEventListener('pointerdown', (e) => {
   viewport.setPointerCapture(e.pointerId);
   const sx = e.offsetX, sy = e.offsetY;
+
+  if (wandMode && e.button === 0 && !spaceHeld) {
+    const p = screenToDoc(sx, sy);
+    if (p.x >= 0 && p.x < SIZE && p.y >= 0 && p.y < SIZE) wandClick(p, e.shiftKey);
+    return;
+  }
 
   if (e.button === 1 || e.button === 2 || spaceHeld) {
     drag = { mode: 'pan', startX: sx, startY: sy, vx: view.x, vy: view.y };
@@ -1649,8 +1696,10 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
   if (e.key === 'Escape') {
     if (!libraryModal.hidden) { closeLibrary(); return; }
+    if (wandMode) { setWandMode(false); return; }
     selectLayer(null); return;
   }
+  if (e.key === 'w' || e.key === 'W') { setWandMode(!wandMode); return; }
   if (e.key === 'f' || e.key === 'F') { fitView(); return; }
   if (e.key === 's' || e.key === 'S') {
     if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('btn-save').click(); return; }

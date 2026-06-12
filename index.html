@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.20</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.21</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -112,6 +112,13 @@
       <button id="btn-zoom-out" class="hud-btn" title="Zoom out (-)">−</button>
       <span id="zoom-readout" class="mono hud-readout">100%</span>
       <button id="btn-zoom-in" class="hud-btn" title="Zoom in (+)">+</button>
+      <span class="hud-sep"></span>
+      <button id="btn-wand" class="hud-btn toggle" title="Magic wand — click the livery to select a contiguous color region, Shift+click to select that color everywhere. The selection becomes a material-only layer: give it pearl/candy/flake without repainting. (W)">Wand</button>
+      <span id="wand-tol-row" hidden>
+        <label for="wand-tol" class="hud-readout" style="min-width:auto">Tol</label>
+        <input id="wand-tol" type="range" min="0" max="100" value="30" style="width:70px; accent-color: var(--cyan);">
+        <span id="wand-tol-val" class="mono hud-readout" style="min-width:24px">30</span>
+      </span>
       <span class="hud-sep"></span>
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
       <button id="btn-shine-view" class="hud-btn toggle" title="Sweep a light across the livery to preview finishes — gloss flashes, flake sparkles, ghost layers appear (L)">Shine</button>
