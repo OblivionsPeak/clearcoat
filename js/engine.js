@@ -20,6 +20,8 @@ export const MATERIALS = {
   chrome:   { label: 'Chrome',   met: 255, rough: 10,  clear: 255 },
   candy:    { label: 'Candy',    met: 220, rough: 25,  clear: 255 },
   pearl:    { label: 'Pearl',    met: 190, rough: 60,  clear: 255 },
+  // pearl over existing artwork without muting it — values validated in-sim
+  glaze:    { label: 'Glaze',    met: 75,  rough: 55,  clear: 255 },
   flake:    { label: 'Flake',    tex: 'flake',   met: 160, rough: 45,  clear: 255, density: 18, contrast: 100 },
   brushed:  { label: 'Brushed',  tex: 'brushed', met: 205, rough: 110, clear: 130, scale: 2,  contrast: 100 },
   carbon:   { label: 'Carbon',   tex: 'carbon',  met: 40,  rough: 85,  clear: 210, scale: 16, contrast: 100 },
