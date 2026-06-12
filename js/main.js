@@ -1599,6 +1599,7 @@ function syncDocUI() {
 // ---------- autosave ----------
 
 function scheduleAutosave() {
+  liveSyncTick();
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(async () => {
     captureHistory();
@@ -1725,24 +1726,63 @@ async function refreshRestoreButton(handle, custid) {
   $('btn-restore-original').hidden = !hasBackup;
 }
 
-$('btn-save-iracing').addEventListener('click', async () => {
-  const custid = validCustid();
-  if (!custid) return;
+async function saveToiRacing({ quiet = false } = {}) {
+  const custid = quiet ? $('custid').value.trim() : validCustid();
+  if (!custid || !/^\d+$/.test(custid)) return false;
   try {
-    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
-    if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); return; }
+    const handle = await persist.getPaintsFolder({ requestIfNeeded: !quiet });
+    if (!handle) {
+      if (!quiet) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); }
+      return false;
+    }
     const backed = await backupOriginals(handle, custid);
     const [paintName, specName] = paintFilenames(custid);
     await persist.writeFileToFolder(handle, paintName, canvasToTGA(exportPaintCanvas(renderPaint(doc))));
     if (specName) await persist.writeFileToFolder(handle, specName, canvasToTGA(renderSpec(doc), { alpha: true }));
-    const btn = $('btn-save-iracing');
-    btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
-    status(backed
-      ? `Saved ${paintName} — your previous paint is kept in clearcoat-backup/. Use Restore to swap back.`
-      : `Saved ${paintName}${specName ? ' + spec' : ''} — check the showroom.`, 'ok');
-    refreshRestoreButton(handle, custid);
+    if (quiet) {
+      $('status-fs').textContent = '📁 live · ' + new Date().toLocaleTimeString();
+    } else {
+      const btn = $('btn-save-iracing');
+      btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
+      status(backed
+        ? `Saved ${paintName} — your previous paint is kept in clearcoat-backup/. Use Restore to swap back.`
+        : `Saved ${paintName}${specName ? ' + spec' : ''} — check the showroom.`, 'ok');
+      refreshRestoreButton(handle, custid);
+    }
+    return true;
   } catch (err) {
-    status('Write failed: ' + err.message, 'err');
+    if (!quiet) status('Write failed: ' + err.message, 'err');
+    return false;
+  }
+}
+
+$('btn-save-iracing').addEventListener('click', () => saveToiRacing());
+
+// ---------- live sync ----------
+// While enabled, settled edits stream straight into the iRacing folder —
+// keep the sim showroom open on a second monitor and it *is* the preview.
+
+let liveSyncTimer = null;
+let liveSyncBusy = false;
+
+function liveSyncTick() {
+  if (!$('live-sync').checked) return;
+  clearTimeout(liveSyncTimer);
+  liveSyncTimer = setTimeout(async () => {
+    if (liveSyncBusy) { liveSyncTick(); return; }
+    liveSyncBusy = true;
+    try { await saveToiRacing({ quiet: true }); } finally { liveSyncBusy = false; }
+  }, 2500);
+}
+
+$('live-sync').addEventListener('change', () => {
+  persist.saveSetting('liveSync', $('live-sync').checked).catch(() => {});
+  if ($('live-sync').checked) {
+    status('Live sync ON — edits stream to the iRacing folder; keep the showroom open.', 'ok');
+    liveSyncTick();
+  } else {
+    clearTimeout(liveSyncTimer);
+    status('Live sync off.');
   }
 });
 
@@ -1960,6 +2000,8 @@ window.addEventListener('resize', requestRender);
   if (savedCustid) $('custid').value = savedCustid;
   const customNum = await persist.loadSetting('customNumber').catch(() => null);
   if (customNum) $('custom-number').checked = true;
+  const liveSync = await persist.loadSetting('liveSync').catch(() => null);
+  if (liveSync && persist.fsSupported()) $('live-sync').checked = true;
 
   const auto = await persist.loadAutosave().catch(() => null);
   if (auto && (auto.layers?.length || auto.template || auto.baseColor !== '#1a6cff')) {
