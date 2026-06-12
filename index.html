@@ -132,6 +132,28 @@
       <div class="slider-row" id="ins-fill-row" hidden>
         <label for="ins-fill-color">Color</label>
         <input id="ins-fill-color" type="color" value="#e8e6e1">
+        <input id="ins-fill-color2" type="color" value="#101114" title="Gradient end color" aria-label="Gradient end color" hidden>
+      </div>
+
+      <div class="slider-row" id="ins-fill-shape-row" hidden>
+        <label for="ins-fill-shape">Shape</label>
+        <select id="ins-fill-shape" class="tune-select">
+          <option value="rect">Rectangle</option>
+          <option value="ellipse">Ellipse</option>
+          <option value="triangle">Triangle</option>
+          <option value="diamond">Diamond</option>
+          <option value="stripe">Stripe</option>
+        </select>
+      </div>
+
+      <div class="slider-row" id="ins-fill-type-row" hidden>
+        <label for="ins-fill-type">Fill</label>
+        <select id="ins-fill-type" class="tune-select">
+          <option value="solid">Solid</option>
+          <option value="linear">Linear</option>
+          <option value="radial">Radial</option>
+        </select>
+        <input id="ins-fill-angle" type="number" step="1" min="0" max="360" class="tune-num mono" title="Gradient angle in degrees — 0 = left → right" aria-label="Gradient angle" hidden>
       </div>
 
       <div class="slider-row">
