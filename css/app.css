@@ -663,3 +663,23 @@ input  { font-family: inherit; }
   color: var(--ink-dim);
 }
 .support-btn:hover { color: var(--orange); border-color: var(--orange); background: #221a14; }
+
+/* help overlay — reuses the library modal backdrop/panel styling */
+#help-modal {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(10, 11, 14, .7);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.help-panel { max-width: 760px; max-height: 84vh; overflow-y: auto; }
+.help-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 22px; }
+.help-steps { margin: 0 0 0 18px; font-size: 12px; line-height: 1.65; color: var(--ink-dim); }
+.help-steps li { margin-bottom: 8px; }
+.help-steps b { color: var(--ink); }
+.help-keys { border-collapse: collapse; font-size: 11px; color: var(--ink-dim); width: 100%; }
+.help-keys td { padding: 3px 8px 3px 0; vertical-align: top; }
+.help-keys .mono { color: var(--cyan); white-space: nowrap; font-size: 10px; }
+.help-tips { margin: 0 0 0 16px; font-size: 11px; line-height: 1.6; color: var(--ink-dim); }
+.help-tips li { margin-bottom: 6px; }
+.help-tips b { color: var(--ink); }
+@media (max-width: 880px) { .help-cols { grid-template-columns: 1fr; } }

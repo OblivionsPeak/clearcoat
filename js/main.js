@@ -286,6 +286,9 @@ $('btn-wand').addEventListener('click', () => setWandMode(!wandMode));
 $('wand-tol').addEventListener('input', () => {
   $('wand-tol-val').textContent = $('wand-tol').value;
 });
+$('wand-recolor').addEventListener('change', () => {
+  $('wand-recolor-color').hidden = !$('wand-recolor').checked;
+});
 
 function wandClick(p, global) {
   const tol = parseInt($('wand-tol').value, 10);
@@ -295,16 +298,28 @@ function wandClick(p, global) {
     const result = wandSelect(renderPaint(doc), p.x, p.y, tol, global);
     if (!result) { status('Nothing selected — try a higher tolerance.', 'err'); return; }
     try {
+      const recolor = $('wand-recolor').checked;
       const img = await loadImage(result.src);
       const layer = createImageLayer(img, result.src,
-        (global ? 'color ' : 'region ') + result.color);
+        (recolor ? 'recolor ' : global ? 'color ' : 'region ') + result.color);
       layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = 1;
-      layer.specOnly = true; // finish-only by design — pick a material next
+      if (recolor) {
+        // the mask is white — a 100% tint wash repaints it the chosen color
+        layer.matParams = {
+          ...defaultParams(layer.material),
+          tint: $('wand-recolor-color').value,
+          tintAmt: 100,
+        };
+      } else {
+        layer.specOnly = true; // finish-only by design — pick a material next
+      }
       doc.layers.push(layer);
       selectLayer(layer.id);
       markDirty();
       const pct = (result.count / (SIZE * SIZE) * 100).toFixed(1);
-      status(`Selected ${result.color} (${pct}% of sheet) as a material-only layer — pick a finish.`, 'ok');
+      status(recolor
+        ? `Recolored ${result.color} → ${$('wand-recolor-color').value} (${pct}% of sheet) — adjust via the layer's Tint.`
+        : `Selected ${result.color} (${pct}% of sheet) as a material-only layer — pick a finish.`, 'ok');
     } catch (err) {
       status('Selection failed: ' + err.message, 'err');
     }
@@ -1268,6 +1283,13 @@ $('file-pattern').addEventListener('change', async (e) => {
 
 // ---------- HUD ----------
 
+$('btn-help').addEventListener('click', () => { $('help-modal').hidden = false; });
+$('help-close').addEventListener('click', () => { $('help-modal').hidden = true; });
+$('help-modal').addEventListener('click', (e) => { if (e.target === $('help-modal')) $('help-modal').hidden = true; });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'F1') { e.preventDefault(); $('help-modal').hidden = !$('help-modal').hidden; }
+});
+
 $('btn-fit').addEventListener('click', fitView);
 $('btn-zoom-in').addEventListener('click', () => { setZoom(view.zoom * 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2); $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%'; });
 $('btn-zoom-out').addEventListener('click', () => { setZoom(view.zoom / 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2); $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%'; });
@@ -1695,6 +1717,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
   if (e.key === 'Escape') {
+    if (!$('help-modal').hidden) { $('help-modal').hidden = true; return; }
     if (!libraryModal.hidden) { closeLibrary(); return; }
     if (wandMode) { setWandMode(false); return; }
     selectLayer(null); return;

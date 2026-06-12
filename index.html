@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.23</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.24</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -119,10 +119,14 @@
         <label for="wand-tol" class="hud-readout" style="min-width:auto">Tol</label>
         <input id="wand-tol" type="range" min="0" max="100" value="30" style="width:70px; accent-color: var(--cyan);">
         <span id="wand-tol-val" class="mono hud-readout" style="min-width:24px">30</span>
+        <label class="tb-check" title="Instead of a material-only selection, repaint the selected color with the chosen one"><input type="checkbox" id="wand-recolor"> Recolor</label>
+        <input type="color" id="wand-recolor-color" value="#1a6cff" title="Replacement color" style="width:26px;height:22px;border:1px solid var(--seam);border-radius:4px;background:var(--asphalt);padding:2px;cursor:pointer;" hidden>
       </span>
       <span class="hud-sep"></span>
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
       <button id="btn-shine-view" class="hud-btn toggle" title="Sweep a light across the livery to preview finishes — gloss flashes, flake sparkles, ghost layers appear (L)">Shine</button>
+      <span class="hud-sep"></span>
+      <button id="btn-help" class="hud-btn" title="How Clearcoat works + shortcuts (F1)">?</button>
     </div>
     <div id="drop-cue" hidden><span>Drop image to add layer</span></div>
     <div id="spec-legend" hidden>
@@ -296,6 +300,52 @@
     <a class="support-link" href="https://ko-fi.com/metalprophecymedia" target="_blank" rel="noopener" title="Clearcoat is free — tips keep it growing">♥ Support Clearcoat</a>
   </span>
 </footer>
+
+<div id="help-modal" hidden>
+  <div class="library-panel help-panel">
+    <h2 class="panel-title">How Clearcoat works
+      <span class="title-actions"><button id="help-close" class="sm-btn icon" title="Close (Esc)">✕</button></span>
+    </h2>
+    <div class="help-cols">
+      <div>
+        <h3 class="sub-title">The workflow</h3>
+        <ol class="help-steps">
+          <li><b>Load your car's template PSD</b> (left panel) — Clearcoat extracts the wireframe so you can see where panels are.</li>
+          <li><b>Build layers</b> — <b>+ Image</b> for logos, <b>+ Text</b> for names/numbers, <b>+ Fill</b> for shapes &amp; gradients, <b>+ Pattern</b> for SimTex textures, <b>+ Library</b> for ready-made graphics. Or <b>Import current car paint</b> to start from your Trading Paints livery.</li>
+          <li><b>Give every layer a finish</b> — click a layer, pick a material (pearl, candy, flake…), fine-tune it. <i>The Base coat row at the bottom of the layer list is clickable too</i> — that's how the whole car gets a material.</li>
+          <li><b>Wand (W)</b> — click a color on the livery to select it (Shift+click = that color everywhere). Give the selection a finish, or check <b>Recolor</b> first to repaint it.</li>
+          <li><b>Preview</b> — <b>Shine (L)</b> sweeps a light across the sheet so finishes show; <b>Spec view (S)</b> shows the raw material data.</li>
+          <li><b>Save to iRacing</b> — link your paints folder once, keep the sim showroom open, and every save appears on the real car in seconds. Your Trading Paints file is backed up automatically; <b>Restore</b> brings it back.</li>
+        </ol>
+      </div>
+      <div>
+        <h3 class="sub-title">Shortcuts</h3>
+        <table class="help-keys">
+          <tr><td class="mono">Ctrl+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
+          <tr><td class="mono">W</td><td>Magic wand</td></tr>
+          <tr><td class="mono">L / S</td><td>Shine / Spec view</td></tr>
+          <tr><td class="mono">F</td><td>Fit to window</td></tr>
+          <tr><td class="mono">Ctrl+D</td><td>Duplicate layer</td></tr>
+          <tr><td class="mono">Del</td><td>Delete layer</td></tr>
+          <tr><td class="mono">Arrows (+Shift)</td><td>Nudge 1px (10px)</td></tr>
+          <tr><td class="mono">Ctrl+click</td><td>Multi-select in layer list</td></tr>
+          <tr><td class="mono">Shift</td><td>Snap rotation 15°</td></tr>
+          <tr><td class="mono">Scroll / Space-drag</td><td>Zoom / pan</td></tr>
+          <tr><td class="mono">Esc</td><td>Exit tool / deselect</td></tr>
+        </table>
+        <h3 class="sub-title">Good to know</h3>
+        <ul class="help-tips">
+          <li>🔒 <b>Lock</b> a full-sheet layer (imported liveries auto-lock) so clicks pass through it.</li>
+          <li>⧉ duplicates a layer right from its row.</li>
+          <li><b>Material only</b> stamps a finish without painting — pearl on existing artwork.</li>
+          <li>Click the same spot repeatedly to cycle through stacked layers.</li>
+          <li>Seeing something odd? Check the <b>version number</b> top-left and hard-refresh (Ctrl+F5) — the site caches for ~10 min after updates.</li>
+          <li>Live save needs Chrome/Edge (Brave: enable File System Access in brave://flags).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="library-modal" hidden>
   <div class="library-panel">
