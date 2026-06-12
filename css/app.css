@@ -643,3 +643,12 @@ input  { font-family: inherit; }
 ::-webkit-scrollbar-thumb { background: var(--seam-bright); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
+
+/* support link — quiet, single, no nagging */
+.support-link {
+  color: var(--ink-faint);
+  text-decoration: none;
+  font-size: 11px;
+  transition: color .15s;
+}
+.support-link:hover { color: var(--orange); }

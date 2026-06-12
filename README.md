@@ -15,6 +15,8 @@ Photoshop-free iRacing livery editing in the browser, with **live preview on the
 
 No install, no backend, no account. Everything runs client-side; projects autosave to your browser (IndexedDB) and can be exported/imported as `.clearcoat.json`.
 
+Clearcoat is free. If it saves you time (or a Photoshop license), you can [support development on Ko-fi](https://ko-fi.com/metalprophecymedia). ♥
+
 ## Exports
 
 | Output | Format |
