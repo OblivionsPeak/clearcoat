@@ -569,6 +569,53 @@ input  { font-family: inherit; }
 /* balls are <canvas> elements shaded by js/shaderball.js with the actual
    spec channel values + current paint color */
 
+/* ============ GRAPHICS LIBRARY ============ */
+
+#library-modal {
+  position: fixed; inset: 0;
+  z-index: 50;
+  background: rgba(10, 11, 14, .72);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.library-panel {
+  width: min(720px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--seam);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
+}
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+.library-item {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: var(--panel-raise);
+  border: 1px solid var(--seam);
+  border-radius: 6px;
+  padding: 14px 8px 10px;
+  transition: all .12s;
+}
+.library-item:hover { border-color: var(--orange); background: #20242c; }
+.library-item svg {
+  width: 92px; height: 64px;
+  pointer-events: none;
+}
+.library-name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--ink-dim);
+}
+.library-item:hover .library-name { color: var(--ink); }
+
 /* ============ STATUS BAR ============ */
 
 #statusbar {
