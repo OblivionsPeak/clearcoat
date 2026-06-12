@@ -1,6 +1,6 @@
 import {
   SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, createFillLayer,
-  createTextLayer, regenerateText,
+  createTextLayer, regenerateText, fillShapePath, fillPaintStyle,
   renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
   serializeDoc, deserializeDoc, loadImage,
   templateOverlay, defaultParams, resolveParams, mixHex,
@@ -514,9 +514,13 @@ function rebuildLayerList() {
 
     let thumb;
     if (layer.type === 'fill') {
-      thumb = document.createElement('span');
+      // tiny canvas so the thumb shows the actual shape + gradient
+      thumb = document.createElement('canvas');
       thumb.className = 'thumb';
-      thumb.style.background = layer.color;
+      thumb.width = thumb.height = 30;
+      const tctx = thumb.getContext('2d');
+      tctx.fillStyle = fillPaintStyle(tctx, layer, 2, 2, 26, 26);
+      tctx.fill(fillShapePath(layer.shape, 2, 2, 26, 26));
     } else {
       thumb = document.createElement('img');
       thumb.className = 'thumb';
@@ -651,11 +655,22 @@ function syncInspector() {
     $('ins-opacity').value = Math.round(sel.opacity * 100);
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
     $('ins-spec-only').checked = !!sel.specOnly;
-    // fill layers: color picker instead of image transforms
+    // fill layers: color/shape/gradient pickers instead of image transforms
     $('ins-fill-row').hidden = sel.type !== 'fill';
+    $('ins-fill-shape-row').hidden = sel.type !== 'fill';
+    $('ins-fill-type-row').hidden = sel.type !== 'fill';
     document.querySelector('.xform-grid').hidden = sel.type === 'fill';
     $('ins-flip-h').hidden = $('ins-flip-v').hidden = sel.type === 'fill';
-    if (sel.type === 'fill') $('ins-fill-color').value = sel.color;
+    if (sel.type === 'fill') {
+      const ft = sel.fillType || 'solid';
+      $('ins-fill-color').value = sel.color;
+      $('ins-fill-color2').hidden = ft === 'solid';
+      $('ins-fill-color2').value = sel.color2 || '#101114';
+      $('ins-fill-shape').value = sel.shape || 'rect';
+      $('ins-fill-type').value = ft;
+      $('ins-fill-angle').hidden = ft !== 'linear';
+      if (document.activeElement !== $('ins-fill-angle')) $('ins-fill-angle').value = sel.gradAngle ?? 0;
+    }
     $('ins-text-section').hidden = sel.type !== 'text';
     if (sel.type === 'text') {
       if (document.activeElement !== $('ins-text')) $('ins-text').value = sel.text;
@@ -982,6 +997,42 @@ $('ins-fill-color').addEventListener('input', () => {
   syncMaterialGrid(); // shader balls re-shade with the new albedo
   markDirty();
 });
+
+$('ins-fill-color2').addEventListener('input', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill') return;
+  sel.color2 = $('ins-fill-color2').value;
+  rebuildLayerList();
+  markDirty();
+});
+
+$('ins-fill-shape').addEventListener('change', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill') return;
+  sel.shape = $('ins-fill-shape').value;
+  rebuildLayerList();
+  markDirty();
+});
+
+$('ins-fill-type').addEventListener('change', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill') return;
+  sel.fillType = $('ins-fill-type').value;
+  syncInspector(); // show/hide color2 + angle for the new type
+  rebuildLayerList();
+  markDirty();
+});
+
+$('ins-fill-angle').addEventListener('input', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill') return;
+  const v = parseInt($('ins-fill-angle').value, 10);
+  if (!Number.isFinite(v)) return;
+  sel.gradAngle = Math.max(0, Math.min(360, v));
+  rebuildLayerList();
+  markDirty();
+});
+$('ins-fill-angle').addEventListener('blur', () => syncInspector());
 
 $('btn-add-text').addEventListener('click', () => {
   const layer = createTextLayer();

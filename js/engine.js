@@ -251,7 +251,7 @@ export function createPatternLayer(img, src, name) {
   };
 }
 
-// solid-color material patch — a resizable rectangle carrying its own color
+// solid-color material patch — a resizable shape carrying its own color
 // and material, so finishes (pearl, flake…) can be placed without an image
 export function createFillLayer(color = '#e8e6e1') {
   return {
@@ -262,9 +262,69 @@ export function createFillLayer(color = '#e8e6e1') {
     opacity: 1,
     material: 'gloss',
     color,
+    shape: 'rect',         // rect | ellipse | triangle | diamond | stripe
+    fillType: 'solid',     // solid | linear | radial
+    color2: '#101114',     // gradient end color
+    gradAngle: 0,          // linear gradient angle in degrees, 0 = left → right
     x: 0, y: 0, scale: 1, rotation: 0, flipH: false, flipV: false,
     rx: SIZE / 2 - 300, ry: SIZE / 2 - 200, rw: 600, rh: 400,
   };
+}
+
+// shape silhouette for a fill layer, built inside an arbitrary rect (the
+// layer's region, or a thumbnail box)
+export function fillShapePath(shape, rx, ry, rw, rh) {
+  const p = new Path2D();
+  switch (shape) {
+    case 'ellipse':
+      p.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+      break;
+    case 'triangle': // isoceles, pointing up
+      p.moveTo(rx + rw / 2, ry);
+      p.lineTo(rx + rw, ry + rh);
+      p.lineTo(rx, ry + rh);
+      p.closePath();
+      break;
+    case 'diamond':
+      p.moveTo(rx + rw / 2, ry);
+      p.lineTo(rx + rw, ry + rh / 2);
+      p.lineTo(rx + rw / 2, ry + rh);
+      p.lineTo(rx, ry + rh / 2);
+      p.closePath();
+      break;
+    case 'stripe': { // parallelogram slanted 45°, clamped to stay in the region
+      const sh = Math.min(rh, rw);
+      p.moveTo(rx + sh, ry);
+      p.lineTo(rx + rw, ry);
+      p.lineTo(rx + rw - sh, ry + rh);
+      p.lineTo(rx, ry + rh);
+      p.closePath();
+      break;
+    }
+    default:
+      p.rect(rx, ry, rw, rh);
+  }
+  return p;
+}
+
+// solid color or a color → color2 gradient spanning the given rect
+export function fillPaintStyle(ctx, layer, rx, ry, rw, rh) {
+  const color = layer.color || '#ffffff';
+  if ((layer.fillType || 'solid') === 'solid') return color;
+  const cx = rx + rw / 2, cy = ry + rh / 2;
+  let g;
+  if (layer.fillType === 'radial') {
+    // region center out to the farthest corner
+    g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(rw, rh) / 2);
+  } else {
+    const a = (layer.gradAngle || 0) * Math.PI / 180;
+    const dx = Math.cos(a), dy = Math.sin(a);
+    const half = (Math.abs(dx) * rw + Math.abs(dy) * rh) / 2;
+    g = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
+  }
+  g.addColorStop(0, color);
+  g.addColorStop(1, layer.color2 || '#101114');
+  return g;
 }
 
 export const isRegionLayer = (l) => l.type === 'pattern' || l.type === 'fill';
@@ -282,8 +342,9 @@ function drawLayer(ctx, layer) {
   ctx.save();
   ctx.globalAlpha = layer.opacity;
   if (layer.type === 'fill') {
-    ctx.fillStyle = layer.color || '#ffffff';
-    ctx.fillRect(layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE);
+    const rx = layer.rx ?? 0, ry = layer.ry ?? 0, rw = layer.rw ?? SIZE, rh = layer.rh ?? SIZE;
+    ctx.fillStyle = fillPaintStyle(ctx, layer, rx, ry, rw, rh);
+    ctx.fill(fillShapePath(layer.shape, rx, ry, rw, rh));
   } else if (layer.type === 'pattern') {
     // tiling fill across a region (seamless textures, e.g. SimTex Pro)
     const pat = ctx.createPattern(layer.img, 'repeat');
@@ -504,6 +565,7 @@ export function serializeDoc(doc) {
       specBlend: l.specBlend || 'replace',
       specOnly: !!l.specOnly,
       color: l.color,
+      shape: l.shape, fillType: l.fillType, color2: l.color2, gradAngle: l.gradAngle,
       src: l.src,
       text: l.text, font: l.font, fontSize: l.fontSize,
       textColor: l.textColor, outlineColor: l.outlineColor, outlineWidth: l.outlineWidth,
@@ -550,6 +612,10 @@ export async function deserializeDoc(data) {
           matParams: l.matParams || null,
           specBlend: l.specBlend || 'replace',
           specOnly: !!l.specOnly,
+          shape: l.shape || 'rect',
+          fillType: l.fillType || 'solid',
+          color2: l.color2 || '#101114',
+          gradAngle: l.gradAngle ?? 0,
           rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
         });
         continue;
