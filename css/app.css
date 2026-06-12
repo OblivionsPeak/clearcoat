@@ -652,3 +652,14 @@ input  { font-family: inherit; }
   transition: color .15s;
 }
 .support-link:hover { color: var(--orange); }
+
+/* topbar support button — visible but not shouting */
+.support-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-color: rgba(255, 77, 0, .45);
+  color: var(--ink-dim);
+}
+.support-btn:hover { color: var(--orange); border-color: var(--orange); background: #221a14; }
