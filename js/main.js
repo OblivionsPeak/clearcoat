@@ -973,6 +973,7 @@ $('btn-new').addEventListener('click', () => {
 function afterDocLoad() {
   selectedId = null;
   $('project-name').value = doc.name;
+  syncPaintTarget();
   $('btn-clear-template').hidden = !doc.template;
   $('template-opacity-row').hidden = !doc.template;
   $('template-style-row').hidden = !doc.template;
@@ -1008,9 +1009,13 @@ $('btn-export-png').addEventListener('click', () => {
 });
 
 $('btn-export-tga').addEventListener('click', () => {
-  downloadBlob(canvasToTGA(renderPaint(doc)), safeName() + '.tga');
-  downloadBlob(canvasToTGA(renderSpec(doc), { alpha: true }), safeName() + '_spec.tga');
-  status('Paint + spec TGAs exported.', 'ok');
+  downloadBlob(canvasToTGA(exportPaintCanvas(renderPaint(doc))), safeName() + '.tga');
+  if (doc.target === 'car') {
+    downloadBlob(canvasToTGA(renderSpec(doc), { alpha: true }), safeName() + '_spec.tga');
+    status('Paint + spec TGAs exported.', 'ok');
+  } else {
+    status(`${doc.target === 'helmet' ? 'Helmet' : 'Suit'} paint TGA exported.`, 'ok');
+  }
 });
 
 // ---------- File System Access: save into iRacing ----------
@@ -1047,10 +1052,25 @@ $('btn-link-folder').addEventListener('click', async () => {
   refreshFsStatus();
 });
 
-// Custom Number paints use the car_num_ prefix; the spec name never changes
+// [paintName, specName] for the active target. Custom Number paints use the
+// car_num_ prefix; helmets and suits have no spec map (specName = null).
 function paintFilenames(custid) {
+  if (doc.target === 'helmet') return [`helmet_${custid}.tga`, null];
+  if (doc.target === 'suit') return [`suit_${custid}.tga`, null];
   const num = $('custom-number').checked;
   return [`car_${num ? 'num_' : ''}${custid}.tga`, `car_spec_${custid}.tga`];
+}
+
+// iRacing helmets are 1024×1024 — downscale the 2048 sheet for that target;
+// car and suit ship at full size.
+function exportPaintCanvas(canvas) {
+  if (doc.target !== 'helmet') return canvas;
+  const c = document.createElement('canvas');
+  c.width = c.height = 1024;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(canvas, 0, 0, 1024, 1024);
+  return c;
 }
 
 function validCustid() {
@@ -1070,6 +1090,7 @@ function validCustid() {
 async function backupOriginals(handle, custid) {
   let backed = false;
   for (const name of paintFilenames(custid)) {
+    if (!name) continue; // no spec map for this target
     const existing = await persist.readFileFromFolder(handle, name);
     if (!existing) continue;
     const bdir = await persist.getBackupDir(handle, true);
@@ -1087,7 +1108,7 @@ async function refreshRestoreButton(handle, custid) {
     const bdir = await persist.getBackupDir(handle, false);
     if (bdir) {
       for (const name of paintFilenames(custid)) {
-        if (await persist.readFileFromFolder(bdir, name)) { hasBackup = true; break; }
+        if (name && await persist.readFileFromFolder(bdir, name)) { hasBackup = true; break; }
       }
     }
   }
@@ -1102,13 +1123,13 @@ $('btn-save-iracing').addEventListener('click', async () => {
     if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); return; }
     const backed = await backupOriginals(handle, custid);
     const [paintName, specName] = paintFilenames(custid);
-    await persist.writeFileToFolder(handle, paintName, canvasToTGA(renderPaint(doc)));
-    await persist.writeFileToFolder(handle, specName, canvasToTGA(renderSpec(doc), { alpha: true }));
+    await persist.writeFileToFolder(handle, paintName, canvasToTGA(exportPaintCanvas(renderPaint(doc))));
+    if (specName) await persist.writeFileToFolder(handle, specName, canvasToTGA(renderSpec(doc), { alpha: true }));
     const btn = $('btn-save-iracing');
     btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
     status(backed
-      ? `Saved — your previous paint is kept in clearcoat-backup/. Use Restore to swap back.`
-      : `Saved ${paintName} + spec — check the showroom.`, 'ok');
+      ? `Saved ${paintName} — your previous paint is kept in clearcoat-backup/. Use Restore to swap back.`
+      : `Saved ${paintName}${specName ? ' + spec' : ''} — check the showroom.`, 'ok');
     refreshRestoreButton(handle, custid);
   } catch (err) {
     status('Write failed: ' + err.message, 'err');
@@ -1127,6 +1148,7 @@ $('btn-restore-original').addEventListener('click', async () => {
     let restored = 0;
     if (bdir) {
       for (const name of paintFilenames(custid)) {
+        if (!name) continue; // no spec map for this target
         const f = await persist.readFileFromFolder(bdir, name);
         if (!f) continue;
         await persist.writeFileToFolder(handle, name, f);
@@ -1155,6 +1177,26 @@ async function addTgaAsLayer(arrayBuffer, name) {
 
 $('custom-number').addEventListener('change', () => {
   persist.saveSetting('customNumber', $('custom-number').checked).catch(() => {});
+});
+
+// ---------- paint target (car / helmet / suit) ----------
+
+// the Custom Number checkbox only applies to car paints
+function syncPaintTarget() {
+  $('paint-target').value = doc.target;
+  const isCar = doc.target === 'car';
+  $('custom-number').disabled = !isCar;
+  $('custom-number').closest('.tb-check').classList.toggle('disabled', !isCar);
+}
+
+$('paint-target').addEventListener('change', () => {
+  doc.target = $('paint-target').value;
+  syncPaintTarget();
+  scheduleAutosave();
+  status(doc.target === 'car'
+    ? 'Painting the car — saves car_<id>.tga + spec map.'
+    : `Painting the ${doc.target} — saves ${doc.target}_<id>.tga${doc.target === 'helmet' ? ' at 1024×1024' : ''}, no spec map.`);
+  refreshFsStatus(); // restore button depends on the target's filenames
 });
 
 // Download the sim-generated .mip files — the only way to get a custom spec
@@ -1194,7 +1236,9 @@ $('btn-import-paint').addEventListener('click', async () => {
     if (!handle) { status('Link your paints folder first.', 'err'); return; }
     const bdir = await persist.getBackupDir(handle, false);
 
-    const candidates = [`car_${custid}.tga`, `car_num_${custid}.tga`];
+    const candidates = doc.target === 'car'
+      ? [`car_${custid}.tga`, `car_num_${custid}.tga`]
+      : [`${doc.target}_${custid}.tga`];
     let file = null, picked = null;
     for (const name of candidates) {
       // prefer the pristine backup if one exists (folder copy may be ours)
@@ -1204,10 +1248,10 @@ $('btn-import-paint').addEventListener('click', async () => {
     }
 
     if (!file) {
-      // fall back: any car-ish TGA in the folder, newest first
+      // fall back: any TGA matching the target's prefix, newest first
       const tgas = (await persist.listFolder(handle)).filter(n => /\.tga$/i.test(n));
-      const carTgas = tgas.filter(n => /^car/i.test(n) && !/spec/i.test(n));
-      const pool = carTgas.length ? carTgas : tgas;
+      const prefixed = tgas.filter(n => n.toLowerCase().startsWith(doc.target) && !/spec/i.test(n));
+      const pool = prefixed.length ? prefixed : tgas;
       let newest = null;
       for (const n of pool) {
         const f = await persist.readFileFromFolder(handle, n);
