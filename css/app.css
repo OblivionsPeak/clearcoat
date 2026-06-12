@@ -385,6 +385,8 @@ input  { font-family: inherit; }
 }
 .hud-btn:hover { color: var(--ink); border-color: var(--seam-bright); }
 .hud-btn.toggle.active { color: var(--cyan); border-color: var(--cyan); }
+.hud-btn.toggle.warn.active { color: var(--orange-hot); border-color: var(--orange); }
+.hud-btn:disabled { opacity: .4; cursor: default; }
 .hud-readout { font-size: 11px; color: var(--ink-dim); min-width: 44px; text-align: center; }
 .hud-sep { width: 1px; height: 16px; background: var(--seam); margin: 0 2px; }
 

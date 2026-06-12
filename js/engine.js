@@ -1,5 +1,7 @@
 // Clearcoat render engine — document model, paint compositing, spec map generation.
 
+import { parseRegionMap } from './regions.js';
+
 export const SIZE = 2048;
 
 // iRacing PBR spec map convention (per official template PSDs):
@@ -128,6 +130,7 @@ export function createDoc() {
     templateColor: '#ffffff',   // recolor linework for contrast; 'original' = multiply as-is
     templateBold: true,         // thicken 1px linework
     customFonts: [],            // { name, data (base64) } — uploaded fonts travel with the project
+    regionMap: null,            // parsed clearcoat-regions/1 map (see regions.js)
   };
 }
 
@@ -579,6 +582,7 @@ export function serializeDoc(doc) {
     templateBold: doc.templateBold,
     template: doc.template ? doc.template.src : null,
     customFonts: (doc.customFonts || []).map(f => ({ name: f.name, data: f.data })),
+    regionMap: doc.regionMap || null,
     layers: doc.layers.map(l => ({
       id: l.id, type: l.type, name: l.name,
       visible: l.visible, locked: !!l.locked, opacity: l.opacity, material: l.material,
@@ -622,6 +626,11 @@ export async function deserializeDoc(data) {
     try {
       doc.template = { img: await loadImage(data.template), src: data.template };
     } catch { /* template image failed — drop it */ }
+  }
+  if (data.regionMap) {
+    try {
+      doc.regionMap = parseRegionMap(data.regionMap);
+    } catch { /* bad region map — drop it */ }
   }
   // custom fonts must be live before text layers regenerate below
   doc.fontWarnings = [];

@@ -80,6 +80,14 @@
         <button class="tpl-color tpl-original" data-tcolor="original" title="Original template colors">org</button>
         <label class="tpl-bold"><input type="checkbox" id="template-bold" checked> Bold</label>
       </div>
+      <div class="template-row" style="margin-top:8px">
+        <button id="btn-load-regions" class="sm-btn wide" title="Load a region map (.json) — labels the sheet's panels for hover labels, the Regions overlay, and one-click Mirror">Load region map…</button>
+        <button id="btn-clear-regions" class="sm-btn icon" title="Remove region map" hidden>✕</button>
+      </div>
+      <div class="template-row" id="region-map-info" style="margin-top:6px; align-items:center" hidden>
+        <span class="hint" id="region-map-name" style="margin:0; flex:1"></span>
+        <button id="btn-export-regions" class="sm-btn" title="Download this region map as JSON — share it so others get labels for the same car">Export map</button>
+      </div>
       <p class="hint">Load your car's official iRacing template <b>PSD</b> directly — Clearcoat extracts the wireframe for you. PNG/JPG work too. Shown for reference only, never exported.</p>
       <p class="hint"><a href="https://www.tradingpaints.com/cartemplates" target="_blank" rel="noopener">Get your car's template ↗</a> (or in-sim: My Content → Car Manager → Download Template)</p>
     </section>
@@ -125,6 +133,9 @@
       <span class="hud-sep"></span>
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
       <button id="btn-shine-view" class="hud-btn toggle" title="Sweep a light across the livery to preview finishes — gloss flashes, flake sparkles, ghost layers appear (L)">Shine</button>
+      <button id="btn-regions-view" class="hud-btn toggle" title="Show the region map's rectangles and panel names over the sheet" disabled>Regions</button>
+      <span class="hud-sep"></span>
+      <button id="btn-annotate" class="hud-btn toggle warn" title="Annotate mode — drag rectangles over the sheet to label panels and record mirror pairs, building a region map for this car">Annotate</button>
       <span class="hud-sep"></span>
       <button id="btn-help" class="hud-btn" title="How Clearcoat works + shortcuts (F1)">?</button>
     </div>
@@ -246,6 +257,7 @@
       <div class="btn-row">
         <button id="ins-flip-h" class="sm-btn" title="Flip horizontally">Flip H</button>
         <button id="ins-flip-v" class="sm-btn" title="Flip vertically">Flip V</button>
+        <button id="ins-mirror" class="sm-btn" title="Duplicate this layer mirrored onto the partner panel — needs a region map with the layer's center inside a mirrored region" disabled>Mirror</button>
         <button id="ins-duplicate" class="sm-btn" title="Duplicate layer (Ctrl+D)">Duplicate</button>
         <button id="ins-delete" class="sm-btn danger" title="Delete layer (Del)">Delete</button>
       </div>
@@ -339,6 +351,7 @@
           <li>⧉ duplicates a layer right from its row.</li>
           <li><b>Material only</b> stamps a finish without painting — pearl on existing artwork.</li>
           <li>Click the same spot repeatedly to cycle through stacked layers.</li>
+          <li><b>Region maps</b> label the sheet's panels (Template panel) — hover shows where you are, <b>Regions</b> overlays the map, and <b>Mirror</b> drops a flipped copy of a layer onto the partner panel. Build your own map with <b>Annotate</b>.</li>
           <li>Seeing something odd? Check the <b>version number</b> top-left and hard-refresh (Ctrl+F5) — the site caches for ~10 min after updates.</li>
           <li>Live save needs Chrome/Edge (Brave: enable File System Access in brave://flags).</li>
         </ul>
@@ -362,6 +375,7 @@
 <input type="file" id="file-tga" accept=".tga" hidden>
 <input type="file" id="file-template" accept=".psd,image/png,image/jpeg,image/webp,image/vnd.adobe.photoshop" hidden>
 <input type="file" id="file-project" accept=".json,application/json" hidden>
+<input type="file" id="file-regions" accept=".json,application/json" hidden>
 <input type="file" id="file-font" accept=".ttf,.otf,.woff,.woff2" hidden>
 
 <script type="module" src="js/main.js"></script>

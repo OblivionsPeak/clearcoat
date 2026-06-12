@@ -13,6 +13,7 @@ import { lightSweepSupported, lightSweepFrame } from './lightsweep.js';
 import * as persist from './persist.js';
 import { LIBRARY, libraryItemToLayerSource } from './library.js';
 import { wandSelect } from './wand.js';
+import { parseRegionMap, createRegionMap, regionAt, regionById, mirrorPoint, mirrorLayerPlacement, uniqueRegionId } from './regions.js';
 
 // ---------- state ----------
 
@@ -192,6 +193,21 @@ function draw() {
   }
   vctx.restore();
 
+  // region map overlay — screen space, forced on while annotating
+  if ((regionsView || annotateMode) && doc.regionMap) drawRegionOverlay();
+
+  // annotate drag — live rectangle preview
+  if (drag && drag.mode === 'annotate') {
+    const a = docToScreen(drag.startP.x, drag.startP.y);
+    const b = docToScreen(drag.curP.x, drag.curP.y);
+    vctx.save();
+    vctx.strokeStyle = '#ff4d00';
+    vctx.lineWidth = 1.5;
+    vctx.setLineDash([4, 4]);
+    vctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    vctx.restore();
+  }
+
   // secondary selections: outline only, no handles
   for (const l of selectedLayers()) {
     if (l.id === selectedId || !l.visible) continue;
@@ -251,6 +267,31 @@ function rotateHandlePos(layer) {
   return { x: midTop.x + dx / len * 26, y: midTop.y + dy / len * 26 };
 }
 
+// ---------- region map overlay ----------
+
+let regionsView = false;
+let annotateMode = false;
+
+function drawRegionOverlay() {
+  vctx.save();
+  vctx.lineWidth = 1;
+  vctx.font = '11px "IBM Plex Mono", monospace';
+  for (const r of doc.regionMap.regions) {
+    const a = docToScreen(r.x, r.y);
+    const b = docToScreen(r.x + r.w, r.y + r.h);
+    vctx.fillStyle = 'rgba(45, 214, 193, .07)';
+    vctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    vctx.strokeStyle = 'rgba(45, 214, 193, .75)';
+    vctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    const label = r.name + (r.mirror ? ' ⇄' : '');
+    vctx.fillStyle = 'rgba(13, 14, 17, .75)'; // backing so labels read over any paint
+    vctx.fillRect(a.x, a.y, vctx.measureText(label).width + 8, 17);
+    vctx.fillStyle = '#2dd6c1';
+    vctx.fillText(label, a.x + 4, a.y + 12);
+  }
+  vctx.restore();
+}
+
 // ---------- pointer interaction ----------
 
 let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan', ... }
@@ -277,9 +318,10 @@ let wandMode = false;
 
 function setWandMode(on) {
   wandMode = on;
+  if (on && annotateMode) setAnnotateMode(false); // the two modes never coexist
   $('btn-wand').classList.toggle('active', on);
   $('wand-tol-row').hidden = !on;
-  viewport.classList.toggle('wand', on);
+  viewport.classList.toggle('wand', on || annotateMode);
   if (on) status('Wand: click a color region — Shift+click selects that color everywhere. Esc to exit.');
 }
 $('btn-wand').addEventListener('click', () => setWandMode(!wandMode));
@@ -329,6 +371,12 @@ function wandClick(p, global) {
 viewport.addEventListener('pointerdown', (e) => {
   viewport.setPointerCapture(e.pointerId);
   const sx = e.offsetX, sy = e.offsetY;
+
+  if (annotateMode && e.button === 0 && !spaceHeld) {
+    const p = screenToDoc(sx, sy);
+    drag = { mode: 'annotate', startP: p, curP: p };
+    return;
+  }
 
   if (wandMode && e.button === 0 && !spaceHeld) {
     const p = screenToDoc(sx, sy);
@@ -400,7 +448,8 @@ viewport.addEventListener('pointerdown', (e) => {
 viewport.addEventListener('pointermove', (e) => {
   const sx = e.offsetX, sy = e.offsetY;
   const p = screenToDoc(sx, sy);
-  $('status-pos').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
+  const region = doc.regionMap ? regionAt(doc.regionMap, p.x, p.y) : null;
+  $('status-pos').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}` + (region ? ` — ${region.name}` : '');
 
   if (!drag) {
     viewport.classList.toggle('over-layer', !!handleAt(sx, sy) || !!hitTest(doc, p.x, p.y));
@@ -408,6 +457,10 @@ viewport.addEventListener('pointermove', (e) => {
   }
 
   switch (drag.mode) {
+    case 'annotate':
+      drag.curP = p;
+      requestRender();
+      break;
     case 'pan':
       view.x = drag.vx + (sx - drag.startX) / view.zoom;
       view.y = drag.vy + (sy - drag.startY) / view.zoom;
@@ -474,6 +527,7 @@ viewport.addEventListener('pointermove', (e) => {
 });
 
 window.addEventListener('pointerup', () => {
+  if (drag && drag.mode === 'annotate') finishAnnotate(drag);
   drag = null;
   viewport.classList.remove('panning');
 });
@@ -754,6 +808,7 @@ function syncInspector() {
     }
     // skew only makes sense for image-like layers (patterns/fills are regions)
     $('ins-skx-wrap').hidden = $('ins-sky-wrap').hidden = sel.type !== 'image' && sel.type !== 'text';
+    $('ins-mirror').disabled = !doc.regionMap;
   }
   if (isBase) syncBaseColorFields();
   syncMaterialGrid();
@@ -939,6 +994,44 @@ $('ins-spec-only').addEventListener('change', () => {
 });
 $('ins-flip-h').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipH = !s.flipH; markDirty(); } });
 $('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipV = !s.flipV; markDirty(); } });
+
+// duplicate the selected layer onto its region's mirror partner panel
+$('ins-mirror').addEventListener('click', () => {
+  const sel = selectedLayer();
+  if (!sel || !doc.regionMap) return;
+  const cx = isRegionLayer(sel) ? sel.rx + sel.rw / 2 : sel.x;
+  const cy = isRegionLayer(sel) ? sel.ry + sel.rh / 2 : sel.y;
+  const src = regionAt(doc.regionMap, cx, cy);
+  if (!src) { status('Layer center is not inside a mapped region.', 'err'); return; }
+  if (!src.mirror) { status(`"${src.name}" has no mirror partner in the map.`, 'err'); return; }
+  const dst = regionById(doc.regionMap, src.mirror);
+  if (!dst) { status(`Mirror partner "${src.mirror}" is missing from the map.`, 'err'); return; }
+  const copy = {
+    ...sel,
+    id: 'L' + Math.random().toString(36).slice(2),
+    name: sel.name + ' (mirrored)',
+    locked: false,
+    matParams: sel.matParams ? { ...sel.matParams } : null,
+    flipH: !sel.flipH,
+  };
+  if (isRegionLayer(sel)) {
+    // mirror both corners of the region rect, then normalize
+    const p1 = mirrorPoint(src, dst, sel.rx, sel.ry);
+    const p2 = mirrorPoint(src, dst, sel.rx + sel.rw, sel.ry + sel.rh);
+    copy.rx = Math.round(Math.min(p1.x, p2.x));
+    copy.ry = Math.round(Math.min(p1.y, p2.y));
+    copy.rw = Math.max(1, Math.round(Math.abs(p2.x - p1.x)));
+    copy.rh = Math.max(1, Math.round(Math.abs(p2.y - p1.y)));
+  } else {
+    const placed = mirrorLayerPlacement(doc.regionMap, sel);
+    copy.x = placed.x;
+    copy.y = placed.y;
+  }
+  doc.layers.push(copy);
+  selectLayer(copy.id);
+  markDirty();
+  status(`Mirrored "${sel.name}" onto ${dst.name}.`, 'ok');
+});
 $('ins-delete').addEventListener('click', deleteSelected);
 $('ins-duplicate').addEventListener('click', duplicateSelected);
 
@@ -1036,6 +1129,107 @@ $('template-opacity').addEventListener('input', () => {
   $('template-opacity-val').textContent = $('template-opacity').value + '%';
   markDirty();
 });
+
+// ---------- region map ----------
+
+function syncRegionUI() {
+  const map = doc.regionMap;
+  $('btn-clear-regions').hidden = !map;
+  $('region-map-info').hidden = !map;
+  if (map) {
+    $('region-map-name').textContent = `${map.car} — ${map.regions.length} region${map.regions.length === 1 ? '' : 's'}`;
+  }
+  $('btn-regions-view').disabled = !map;
+  if (!map && regionsView) setRegionsView(false);
+  syncInspector(); // Mirror button availability
+}
+
+$('btn-load-regions').addEventListener('click', () => $('file-regions').click());
+$('file-regions').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    doc.regionMap = parseRegionMap(JSON.parse(await file.text()));
+    syncRegionUI();
+    scheduleAutosave();
+    requestRender();
+    status(`Region map loaded: ${doc.regionMap.car} (${doc.regionMap.regions.length} regions) — hover the sheet for panel names.`, 'ok');
+  } catch (err) {
+    status('Could not load region map: ' + (err.message || 'invalid JSON'), 'err');
+  }
+});
+
+$('btn-clear-regions').addEventListener('click', () => {
+  doc.regionMap = null;
+  syncRegionUI();
+  scheduleAutosave();
+  requestRender();
+  status('Region map removed.');
+});
+
+$('btn-export-regions').addEventListener('click', () => {
+  if (!doc.regionMap) return;
+  const blob = new Blob([JSON.stringify(doc.regionMap, null, 2)], { type: 'application/json' });
+  const name = doc.regionMap.car.trim().replace(/[^\w\- ]+/g, '').replace(/\s+/g, '-').toLowerCase() || 'car';
+  downloadBlob(blob, name + '.regions.json');
+  status('Region map exported.', 'ok');
+});
+
+function setRegionsView(on) {
+  regionsView = on;
+  $('btn-regions-view').classList.toggle('active', on);
+  requestRender();
+}
+$('btn-regions-view').addEventListener('click', () => setRegionsView(!regionsView));
+
+function setAnnotateMode(on) {
+  annotateMode = on;
+  if (on && wandMode) setWandMode(false); // the two modes never coexist
+  $('btn-annotate').classList.toggle('active', on);
+  viewport.classList.toggle('wand', on || wandMode);
+  if (on) {
+    setRegionsView(true);
+    status('Annotate: drag a rectangle over a panel, then name it. Esc to exit.');
+  } else {
+    if (!doc.regionMap && regionsView) setRegionsView(false); // nothing to overlay
+    requestRender();
+  }
+}
+$('btn-annotate').addEventListener('click', () => setAnnotateMode(!annotateMode));
+
+// drag released in annotate mode → prompt for name + mirror partner and
+// append the region to the doc's map (creating one first if needed)
+function finishAnnotate(d) {
+  const cl = (v) => Math.max(0, Math.min(SIZE, v));
+  const x1 = cl(Math.min(d.startP.x, d.curP.x)), y1 = cl(Math.min(d.startP.y, d.curP.y));
+  const x2 = cl(Math.max(d.startP.x, d.curP.x)), y2 = cl(Math.max(d.startP.y, d.curP.y));
+  const w = Math.round(x2 - x1), h = Math.round(y2 - y1);
+  if (w < 24 || h < 24) { requestRender(); status('Region too small — drag a rectangle at least 24px on each side.', 'err'); return; }
+  if (!doc.regionMap) {
+    const car = prompt('Car name for this region map (e.g. "Mazda MX-5 Cup"):', '');
+    if (car === null) { requestRender(); return; }
+    doc.regionMap = createRegionMap(car.trim());
+  }
+  const map = doc.regionMap;
+  const name = prompt('Region name (e.g. "Hood", "Left Door"):');
+  if (name === null || !name.trim()) { requestRender(); return; }
+  const region = { id: uniqueRegionId(name.trim(), map), name: name.trim(), x: Math.round(x1), y: Math.round(y1), w, h };
+  const ids = map.regions.map(r => r.id);
+  const partner = prompt(
+    'Mirror partner id (blank = none).' + (ids.length ? `\nExisting regions: ${ids.join(', ')}` : ''), '');
+  let mirrorNote = '';
+  if (partner && partner.trim()) {
+    const other = regionById(map, partner.trim());
+    if (other) { region.mirror = other.id; other.mirror = region.id; mirrorNote = ` ⇄ ${other.id}`; }
+    else mirrorNote = ` (no region "${partner.trim()}" — added without a mirror)`;
+  }
+  map.regions.push(region);
+  syncRegionUI();
+  scheduleAutosave();
+  requestRender();
+  status(`Region "${region.name}" added as ${region.id}${mirrorNote}.`, 'ok');
+}
 
 // ---------- add image ----------
 
@@ -1399,6 +1593,7 @@ function syncDocUI() {
   }
   rebuildLayerList();
   syncInspector();
+  syncRegionUI();
 }
 
 // ---------- autosave ----------
@@ -1719,6 +1914,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!$('help-modal').hidden) { $('help-modal').hidden = true; return; }
     if (!libraryModal.hidden) { closeLibrary(); return; }
+    if (annotateMode) { setAnnotateMode(false); return; }
     if (wandMode) { setWandMode(false); return; }
     selectLayer(null); return;
   }
