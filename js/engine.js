@@ -162,6 +162,76 @@ export function layerMatrix(l) {
     .scale(l.scale * (l.flipH ? -1 : 1), l.scale * (l.flipV ? -1 : 1));
 }
 
+export const TEXT_FONTS = ['Arial Black', 'Impact', 'Georgia', 'Courier New', 'Verdana', 'Trebuchet MS'];
+
+// text layer — rasterized into img/src so the whole image pipeline
+// (transform, hit-test, materials, thumbnails) treats it like any image
+export function createTextLayer() {
+  const layer = {
+    id: newId(),
+    type: 'text',
+    name: 'text',
+    visible: true,
+    opacity: 1,
+    material: 'gloss',
+    img: null, src: null,
+    text: 'TEXT',
+    font: 'Arial Black',
+    fontSize: 160,
+    textColor: '#ffffff',
+    outlineColor: '#000000',
+    outlineWidth: 0,
+    italic: false,
+    letterSpacing: 0,
+    x: SIZE / 2,
+    y: SIZE / 2,
+    scale: 1,
+    rotation: 0,
+    skewX: 0,
+    skewY: 0,
+    flipH: false,
+    flipV: false,
+  };
+  regenerateText(layer);
+  return layer;
+}
+
+// re-rasterize after any text property change; the canvas is sized to the
+// text so the layer's center (x, y) stays put
+export function regenerateText(layer) {
+  const lines = String(layer.text ?? '').split('\n');
+  const size = Math.max(40, Math.min(400, layer.fontSize || 160));
+  const outline = Math.max(0, Math.min(30, layer.outlineWidth || 0));
+  const fontStr = `${layer.italic ? 'italic ' : ''}${size}px "${layer.font || 'Arial Black'}"`;
+  const spacing = `${Math.max(0, Math.min(40, layer.letterSpacing || 0))}px`;
+  const lineH = size * 1.2;
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  ctx.font = fontStr;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
+  const maxW = Math.max(1, ...lines.map(t => ctx.measureText(t).width));
+  const margin = Math.ceil(outline) + Math.ceil(size * 0.15); // outline + italic overhang
+  c.width = Math.ceil(maxW) + margin * 2;
+  c.height = Math.ceil(lineH * lines.length) + margin * 2;
+  // resizing reset the context — set everything again
+  ctx.font = fontStr;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.fillStyle = layer.textColor || '#ffffff';
+  ctx.strokeStyle = layer.outlineColor || '#000000';
+  ctx.lineWidth = outline * 2; // half the stroke falls outside the glyph
+  lines.forEach((line, i) => {
+    const y = margin + lineH * (i + 0.5);
+    if (outline > 0) ctx.strokeText(line, c.width / 2, y);
+    ctx.fillText(line, c.width / 2, y);
+  });
+  layer.img = c;
+  layer.src = c.toDataURL('image/png');
+  delete layer._albedo; // shader-ball albedo cache is stale now
+}
+
 export function createPatternLayer(img, src, name) {
   return {
     id: newId(),
@@ -433,6 +503,9 @@ export function serializeDoc(doc) {
       specBlend: l.specBlend || 'replace',
       color: l.color,
       src: l.src,
+      text: l.text, font: l.font, fontSize: l.fontSize,
+      textColor: l.textColor, outlineColor: l.outlineColor, outlineWidth: l.outlineWidth,
+      italic: l.italic, letterSpacing: l.letterSpacing,
       x: l.x, y: l.y, scale: l.scale, rotation: l.rotation,
       skewX: l.skewX || 0, skewY: l.skewY || 0,
       flipH: l.flipH, flipV: l.flipV,
@@ -477,6 +550,31 @@ export async function deserializeDoc(data) {
           rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
         });
         continue;
+      }
+      if (l.type === 'text') {
+        const layer = {
+          id: l.id || newId(), type: 'text', name: l.name || 'text',
+          visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1,
+          material: l.material || 'gloss',
+          matParams: l.matParams || null,
+          specBlend: l.specBlend || 'replace',
+          img: null, src: l.src || null,
+          text: l.text ?? 'TEXT', font: l.font || 'Arial Black',
+          fontSize: l.fontSize ?? 160,
+          textColor: l.textColor || '#ffffff',
+          outlineColor: l.outlineColor || '#000000',
+          outlineWidth: l.outlineWidth ?? 0,
+          italic: !!l.italic, letterSpacing: l.letterSpacing ?? 0,
+          x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
+          scale: l.scale ?? 1, rotation: l.rotation ?? 0,
+          skewX: l.skewX ?? 0, skewY: l.skewY ?? 0,
+          flipH: !!l.flipH, flipV: !!l.flipV,
+        };
+        try {
+          regenerateText(layer);
+          doc.layers.push(layer);
+          continue;
+        } catch { /* regeneration failed — fall through to the saved raster */ }
       }
       const img = await loadImage(l.src);
       doc.layers.push({

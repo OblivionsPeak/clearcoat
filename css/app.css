@@ -432,6 +432,22 @@ input  { font-family: inherit; }
 }
 .ins-name:focus { outline: none; border-color: var(--seam-bright); }
 
+/* text layer controls */
+.ins-text {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  resize: vertical;
+  min-height: 44px;
+}
+#ins-text-section .text-grid { margin-top: 10px; }
+#ins-text-section input[type=color] { width: 30px; height: 24px; flex: none; }
+.ins-italic {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+  cursor: pointer;
+}
+.ins-italic input { accent-color: var(--orange); }
+
 .tune-num {
   width: 48px;
   background: var(--asphalt);

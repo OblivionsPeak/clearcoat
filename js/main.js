@@ -1,5 +1,6 @@
 import {
   SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, createFillLayer,
+  createTextLayer, regenerateText,
   renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
   serializeDoc, deserializeDoc, loadImage,
   templateOverlay, defaultParams, resolveParams, mixHex,
@@ -522,14 +523,25 @@ function syncInspector() {
     document.querySelector('.xform-grid').hidden = sel.type === 'fill';
     $('ins-flip-h').hidden = $('ins-flip-v').hidden = sel.type === 'fill';
     if (sel.type === 'fill') $('ins-fill-color').value = sel.color;
+    $('ins-text-section').hidden = sel.type !== 'text';
+    if (sel.type === 'text') {
+      if (document.activeElement !== $('ins-text')) $('ins-text').value = sel.text;
+      $('ins-text-font').value = sel.font;
+      if (document.activeElement !== $('ins-text-size')) $('ins-text-size').value = sel.fontSize;
+      if (document.activeElement !== $('ins-text-spacing')) $('ins-text-spacing').value = sel.letterSpacing;
+      if (document.activeElement !== $('ins-text-outline-w')) $('ins-text-outline-w').value = sel.outlineWidth;
+      $('ins-text-color').value = sel.textColor;
+      $('ins-text-outline-color').value = sel.outlineColor;
+      $('ins-text-italic').checked = sel.italic;
+    }
     for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
       const el = $(id);
       if (document.activeElement !== el) {
         el.value = prop === 'scale' ? sel[prop].toFixed(3) : Math.round((sel[prop] || 0) * 10) / 10;
       }
     }
-    // skew only makes sense for image layers (patterns/fills are regions)
-    $('ins-skx-wrap').hidden = $('ins-sky-wrap').hidden = sel.type !== 'image';
+    // skew only makes sense for image-like layers (patterns/fills are regions)
+    $('ins-skx-wrap').hidden = $('ins-sky-wrap').hidden = sel.type !== 'image' && sel.type !== 'text';
   }
   if (isBase) syncBaseColorFields();
   syncMaterialGrid();
@@ -832,6 +844,42 @@ $('ins-fill-color').addEventListener('input', () => {
   syncMaterialGrid(); // shader balls re-shade with the new albedo
   markDirty();
 });
+
+$('btn-add-text').addEventListener('click', () => {
+  const layer = createTextLayer();
+  doc.layers.push(layer);
+  selectLayer(layer.id);
+  markDirty();
+  status('Text added — edit it in the inspector.', 'ok');
+});
+
+function setTextProp(prop, value) {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'text') return;
+  sel[prop] = value;
+  regenerateText(sel);
+  rebuildLayerList();
+  syncMaterialGrid(); // shader balls re-shade with the new raster
+  markDirty();
+}
+
+$('ins-text').addEventListener('input', () => setTextProp('text', $('ins-text').value));
+$('ins-text-font').addEventListener('change', () => setTextProp('font', $('ins-text-font').value));
+$('ins-text-color').addEventListener('input', () => setTextProp('textColor', $('ins-text-color').value));
+$('ins-text-outline-color').addEventListener('input', () => setTextProp('outlineColor', $('ins-text-outline-color').value));
+$('ins-text-italic').addEventListener('change', () => setTextProp('italic', $('ins-text-italic').checked));
+for (const [id, prop, min, max] of [
+  ['ins-text-size', 'fontSize', 40, 400],
+  ['ins-text-outline-w', 'outlineWidth', 0, 30],
+  ['ins-text-spacing', 'letterSpacing', 0, 40],
+]) {
+  $(id).addEventListener('input', () => {
+    const v = parseInt($(id).value, 10);
+    if (!Number.isFinite(v)) return;
+    setTextProp(prop, Math.max(min, Math.min(max, v)));
+  });
+  $(id).addEventListener('blur', () => syncInspector());
+}
 
 $('btn-add-pattern').addEventListener('click', () => $('file-pattern').click());
 $('file-pattern').addEventListener('change', async (e) => {

@@ -21,7 +21,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.17</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.18</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -80,6 +80,7 @@
           <button id="btn-add-image" class="sm-btn" title="Add an image layer (logo, decal, artwork)">+ Image</button>
           <button id="btn-add-pattern" class="sm-btn" title="Add a seamless texture as a tiling fill over a resizable region">+ Pattern</button>
           <button id="btn-add-fill" class="sm-btn" title="Add a solid-color material patch — a resizable rectangle with its own color, material, and tuning (e.g. a pearl panel)">+ Fill</button>
+          <button id="btn-add-text" class="sm-btn" title="Add a text layer — driver name, car number, sponsor wordmark">+ Text</button>
         </span>
       </h2>
       <p class="hint" style="margin-top:0">Patterns tile a resizable region (default: the whole sheet) — drag its corners to cover just the hood, a stripe, etc. Generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro ↗</a> (use its seamless export), then add them here.</p>
@@ -135,6 +136,36 @@
         <label for="ins-opacity">Opacity</label>
         <input id="ins-opacity" type="range" min="0" max="100" value="100">
         <span class="mono" id="ins-opacity-val">100%</span>
+      </div>
+
+      <div id="ins-text-section" hidden>
+        <h3 class="sub-title">Text</h3>
+        <textarea id="ins-text" class="ins-name ins-text" rows="2" spellcheck="false" aria-label="Text content"></textarea>
+        <div class="slider-row">
+          <label for="ins-text-font">Font</label>
+          <select id="ins-text-font" class="tune-select">
+            <option>Arial Black</option>
+            <option>Impact</option>
+            <option>Georgia</option>
+            <option>Courier New</option>
+            <option>Verdana</option>
+            <option>Trebuchet MS</option>
+          </select>
+        </div>
+        <div class="xform-grid text-grid">
+          <label>Size <input id="ins-text-size" type="number" step="1" min="40" max="400" class="mono"></label>
+          <label>Spacing <input id="ins-text-spacing" type="number" step="1" min="0" max="40" class="mono"></label>
+        </div>
+        <div class="slider-row">
+          <label for="ins-text-color">Color</label>
+          <input id="ins-text-color" type="color" value="#ffffff" title="Text color">
+          <input id="ins-text-outline-color" type="color" value="#000000" title="Outline color" aria-label="Outline color">
+        </div>
+        <div class="slider-row">
+          <label for="ins-text-outline-w">Outline</label>
+          <input id="ins-text-outline-w" type="number" step="1" min="0" max="30" class="tune-num mono">
+          <label class="ins-italic"><input type="checkbox" id="ins-text-italic"> Italic</label>
+        </div>
       </div>
 
       <h3 class="sub-title">Transform</h3>
