@@ -126,6 +126,7 @@ export function createDoc() {
     templateOpacity: 0.75,
     templateColor: '#ffffff',   // recolor linework for contrast; 'original' = multiply as-is
     templateBold: true,         // thicken 1px linework
+    customFonts: [],            // { name, data (base64) } — uploaded fonts travel with the project
   };
 }
 
@@ -163,6 +164,23 @@ export function layerMatrix(l) {
 }
 
 export const TEXT_FONTS = ['Arial Black', 'Impact', 'Georgia', 'Courier New', 'Verdana', 'Trebuchet MS'];
+
+// curated livery-friendly Google Fonts — loaded on demand (see main.js)
+export const GOOGLE_FONTS = [
+  'Anton', 'Archivo Black', 'Bebas Neue', 'Black Ops One', 'Bungee', 'Faster One',
+  'Monoton', 'Orbitron', 'Oswald', 'Permanent Marker', 'Racing Sans One', 'Russo One',
+];
+
+// decode a stored custom font (base64) and register it with the page;
+// throws if the data doesn't parse as a font
+export async function registerCustomFont(name, base64) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const face = new FontFace(name, bytes.buffer);
+  await face.load();
+  document.fonts.add(face);
+}
 
 // text layer — rasterized into img/src so the whole image pipeline
 // (transform, hit-test, materials, thumbnails) treats it like any image
@@ -558,6 +576,7 @@ export function serializeDoc(doc) {
     templateColor: doc.templateColor,
     templateBold: doc.templateBold,
     template: doc.template ? doc.template.src : null,
+    customFonts: (doc.customFonts || []).map(f => ({ name: f.name, data: f.data })),
     layers: doc.layers.map(l => ({
       id: l.id, type: l.type, name: l.name,
       visible: l.visible, locked: !!l.locked, opacity: l.opacity, material: l.material,
@@ -600,6 +619,17 @@ export async function deserializeDoc(data) {
     try {
       doc.template = { img: await loadImage(data.template), src: data.template };
     } catch { /* template image failed — drop it */ }
+  }
+  // custom fonts must be live before text layers regenerate below
+  doc.fontWarnings = [];
+  for (const f of (data.customFonts || [])) {
+    if (!f || !f.name || !f.data) continue;
+    doc.customFonts.push({ name: f.name, data: f.data }); // keep the data even if it fails — don't lose it on resave
+    try {
+      await registerCustomFont(f.name, f.data);
+    } catch {
+      doc.fontWarnings.push(f.name); // bad font — its text falls back to a default face
+    }
   }
   for (const l of (data.layers || [])) {
     try {
