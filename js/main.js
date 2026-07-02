@@ -15,6 +15,7 @@ import * as persist from './persist.js';
 import { LIBRARY, libraryItemToLayerSource } from './library.js';
 import { wandSelect } from './wand.js';
 import { parseRegionMap, createRegionMap, regionAt, regionById, mirrorPoint, mirrorLayerPlacement, uniqueRegionId } from './regions.js';
+import { initAdvisor } from './advisor.js';
 
 // ---------- state ----------
 
@@ -2041,6 +2042,7 @@ window.addEventListener('resize', requestRender);
 
 (async function boot() {
   buildMaterialGrid();
+  initAdvisor(() => doc);   // Livery Advisor reads the live doc on demand
 
   if (!lightSweepSupported()) {
     $('btn-shine-view').disabled = true;
