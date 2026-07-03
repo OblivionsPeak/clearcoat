@@ -3,9 +3,10 @@
 // to 255: iRacing reads spec alpha as "what percentage of metallic/roughness
 // applies", so it must be explicit, not left to chance.
 
-// Decode an uncompressed (type 2) or RLE (type 10) truecolor TGA into a
-// canvas — enough to read back paints written by iRacing/Trading Paints.
-export function tgaToCanvas(buf) {
+// Decode an uncompressed (type 2) or RLE (type 10) truecolor TGA into
+// top-left-origin RGBA bytes — enough to read back paints written by
+// iRacing/Trading Paints. Pure: no canvas, safe under node.
+export function decodeTGA(buf) {
   const d = new DataView(buf);
   const idLen = d.getUint8(0);
   const cmapType = d.getUint8(1);
@@ -48,24 +49,31 @@ export function tgaToCanvas(buf) {
     }
   }
 
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(w, h);
+  // normalise to top-left row order
+  const rgba = new Uint8ClampedArray(w * h * 4);
   for (let y = 0; y < h; y++) {
     const srcY = topLeft ? y : h - 1 - y;
-    img.data.set(flat.subarray(srcY * w * 4, (srcY + 1) * w * 4), y * w * 4);
+    rgba.set(flat.subarray(srcY * w * 4, (srcY + 1) * w * 4), y * w * 4);
   }
+  return { width: w, height: h, rgba };
+}
+
+export function tgaToCanvas(buf) {
+  const { width, height, rgba } = decodeTGA(buf);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(width, height);
+  img.data.set(rgba);
   ctx.putImageData(img, 0, 0);
   return canvas;
 }
 
-export function canvasToTGA(canvas, { alpha = false } = {}) {
-  const w = canvas.width;
-  const h = canvas.height;
-  const ctx = canvas.getContext('2d');
-  const rgba = ctx.getImageData(0, 0, w, h).data;
+// Encode top-left-origin RGBA bytes as an uncompressed (type 2) truecolor
+// TGA. Alpha is forced to 255 in 32-bit output (full spec effect everywhere).
+// Pure: no canvas, safe under node.
+export function encodeTGA(rgba, w, h, { alpha = false } = {}) {
   const bpp = alpha ? 4 : 3;
 
   const header = new Uint8Array(18);
@@ -89,5 +97,13 @@ export function canvasToTGA(canvas, { alpha = false } = {}) {
   const out = new Uint8Array(18 + body.length);
   out.set(header, 0);
   out.set(body, 18);
-  return new Blob([out], { type: 'image/x-tga' });
+  return out;
+}
+
+export function canvasToTGA(canvas, { alpha = false } = {}) {
+  const w = canvas.width;
+  const h = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const rgba = ctx.getImageData(0, 0, w, h).data;
+  return new Blob([encodeTGA(rgba, w, h, { alpha })], { type: 'image/x-tga' });
 }

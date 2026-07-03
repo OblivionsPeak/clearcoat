@@ -98,13 +98,63 @@ const undoStack = [];
 const redoStack = [];
 let suppressHistory = false;
 
+// Layer srcs are large base64 data URLs — duplicating them into all 40
+// snapshot strings costs real memory. History snapshots store a short intern
+// ref instead; the actual srcs live once in a side table. Project export and
+// autosave still serialize full srcs — only history is interned.
+const SRC_REF = '@cc-history-src:';
+const internedSrcs = new Map();   // ref → src
+const internedRefs = new Map();   // src → ref (dedupe)
+let internSeq = 0;
+
+// swap layer srcs for intern refs — serializeDoc returns fresh layer
+// objects, so mutating them never touches the live doc
+function internSnapshot(data) {
+  for (const l of data.layers) {
+    if (typeof l.src !== 'string' || !l.src) continue;
+    let ref = internedRefs.get(l.src);
+    if (!ref) {
+      ref = SRC_REF + (++internSeq);
+      internedRefs.set(l.src, ref);
+      internedSrcs.set(ref, l.src);
+    }
+    l.src = ref;
+  }
+  return data;
+}
+
+// swap intern refs back to real srcs before deserializeDoc sees them
+function resolveSnapshot(data) {
+  for (const l of data.layers) {
+    if (typeof l.src === 'string' && l.src.startsWith(SRC_REF)) {
+      l.src = internedSrcs.get(l.src) ?? null;
+    }
+  }
+  return data;
+}
+
+// drop interned srcs no longer referenced by any remaining snapshot;
+// the trailing quote keeps ":1" from matching ":10" etc.
+function pruneInternedSrcs() {
+  for (const [ref, src] of internedSrcs) {
+    const needle = ref + '"';
+    if (undoStack.some(s => s.includes(needle))) continue;
+    if (redoStack.some(s => s.includes(needle))) continue;
+    internedSrcs.delete(ref);
+    internedRefs.delete(src);
+  }
+}
+
 function captureHistory() {
   if (suppressHistory) return;
-  const snap = JSON.stringify(serializeDoc(doc));
+  const snap = JSON.stringify(internSnapshot(serializeDoc(doc)));
   if (undoStack[undoStack.length - 1] === snap) return;
   undoStack.push(snap);
-  if (undoStack.length > 40) undoStack.shift();
+  const evicted = undoStack.length > 40;
+  if (evicted) undoStack.shift();
+  const cleared = redoStack.length > 0;
   redoStack.length = 0;
+  if (evicted || cleared) pruneInternedSrcs();
   updateUndoButtons();
 }
 
@@ -116,7 +166,7 @@ function updateUndoButtons() {
 async function applyHistory(snap) {
   suppressHistory = true;
   try {
-    doc = await deserializeDoc(JSON.parse(snap));
+    doc = await deserializeDoc(resolveSnapshot(JSON.parse(snap)));
     selectedId = null;
     selectedIds.clear();
     syncDocUI();
@@ -150,6 +200,13 @@ function selectedLayer() {
 
 const HANDLE_PX = 8;
 
+// Composite cache: renderPaint/renderSpec draw into shared singleton canvases
+// in engine.js, so "cache" just means skipping the call — valid while the doc
+// is clean (`dirty` false) and the view mode matches the last render. Shine
+// view is animated and never caches here.
+let compositeCache = null;     // canvas from the last paint/spec render
+let compositeCacheMode = null; // 'paint' | 'spec'
+
 function draw() {
   const w = viewport.clientWidth, h = viewport.clientHeight;
   if (viewport.width !== w * devicePixelRatio || viewport.height !== h * devicePixelRatio) {
@@ -160,16 +217,20 @@ function draw() {
   vctx.clearRect(0, 0, w, h);
 
   let composite;
-  if (specView) {
-    composite = renderSpec(doc);
-  } else if (shineView) {
+  if (shineView) {
     const frame = lightSweepFrame(
       renderPaint(doc), renderSpec(doc),
       (performance.now() - shineStart) / 1000, dirty,
     );
     composite = frame || renderPaint(doc); // WebGL unavailable → plain paint
+    compositeCache = null; // shine touched both singletons — re-render next time
   } else {
-    composite = renderPaint(doc);
+    const mode = specView ? 'spec' : 'paint';
+    if (dirty || !compositeCache || compositeCacheMode !== mode) {
+      compositeCache = specView ? renderSpec(doc) : renderPaint(doc);
+      compositeCacheMode = mode;
+    }
+    composite = compositeCache;
   }
   dirty = false;
 
@@ -1649,17 +1710,32 @@ function syncDocUI() {
 
 // ---------- autosave ----------
 
+async function runAutosave() {
+  autosaveTimer = null;
+  captureHistory();
+  try {
+    await persist.saveAutosave(serializeDoc(doc));
+    $('status-autosave').textContent = 'autosaved ' + new Date().toLocaleTimeString();
+  } catch { /* quota or private mode — non-fatal */ }
+}
+
 function scheduleAutosave() {
   liveSyncTick();
   clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(async () => {
-    captureHistory();
-    try {
-      await persist.saveAutosave(serializeDoc(doc));
-      $('status-autosave').textContent = 'autosaved ' + new Date().toLocaleTimeString();
-    } catch { /* quota or private mode — non-fatal */ }
-  }, 1200);
+  autosaveTimer = setTimeout(runAutosave, 1200);
 }
+
+// the tab can vanish mid-debounce — flush the pending save before it does
+// (fire-and-forget; IndexedDB writes usually complete from these handlers)
+function flushAutosave() {
+  if (!autosaveTimer) return;
+  clearTimeout(autosaveTimer);
+  runAutosave();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushAutosave();
+});
+window.addEventListener('pagehide', flushAutosave);
 
 // ---------- exports ----------
 
