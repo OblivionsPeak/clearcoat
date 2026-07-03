@@ -32,6 +32,8 @@
     <button id="btn-new" class="tb-btn" title="New project">New</button>
     <button id="btn-open" class="tb-btn" title="Open a .clearcoat.json project">Open</button>
     <button id="btn-save" class="tb-btn" title="Download project as .clearcoat.json">Save</button>
+    <button id="btn-projects" class="tb-btn" title="Browse projects saved in this browser">Projects</button>
+    <span id="current-project-label" class="current-project mono" title="The browser project autosave follows">unsaved</span>
   </div>
 
   <div class="topbar-group divider">
@@ -380,6 +382,20 @@
         </ul>
       </div>
     </div>
+  </div>
+</div>
+
+<div id="projects-modal" hidden>
+  <div class="library-panel projects-panel">
+    <h2 class="panel-title">Projects
+      <span class="title-actions">
+        <button id="btn-save-as-project" class="sm-btn" title="Save the current livery as a named project in this browser">Save as project</button>
+        <button id="btn-new-project" class="sm-btn" title="Start a fresh livery (unsaved until you save it as a project)">New project</button>
+        <button id="projects-close" class="sm-btn icon" title="Close (Esc)">✕</button>
+      </span>
+    </h2>
+    <p class="hint" style="margin-top:0">Projects live in this browser (IndexedDB). The open project autosaves as you work. Use topbar <b>Save</b> for a portable .clearcoat.json.</p>
+    <ul id="project-list" class="project-list"></ul>
   </div>
 </div>
 

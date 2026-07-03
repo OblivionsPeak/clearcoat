@@ -29,6 +29,7 @@ let dirty = true;             // composite needs re-render
 let studioView = false;       // Studio 3D panel open
 let studioDirty = true;       // studio textures need re-render + re-upload
 let autosaveTimer = null;
+let currentProjectId = null;  // browser project autosave writes through to (null = unsaved scratch)
 
 const view = { x: 0, y: 0, zoom: 0.3 };   // doc → screen: screen = (doc + offset) * zoom
 
@@ -155,6 +156,15 @@ function captureHistory() {
   const cleared = redoStack.length > 0;
   redoStack.length = 0;
   if (evicted || cleared) pruneInternedSrcs();
+  updateUndoButtons();
+}
+
+// opening a project starts its own timeline — empty stacks let the prune
+// sweep every interned src, so the tables fully clear
+function resetHistory() {
+  undoStack.length = 0;
+  redoStack.length = 0;
+  pruneInternedSrcs();
   updateUndoButtons();
 }
 
@@ -1662,6 +1672,7 @@ $('file-project').addEventListener('change', async (e) => {
   try {
     const data = JSON.parse(await file.text());
     doc = await deserializeDoc(data);
+    setCurrentProject(null); // an imported file must not write through to a browser project
     afterDocLoad();
     status(`Opened "${doc.name}".`, 'ok');
   } catch {
@@ -1672,6 +1683,7 @@ $('file-project').addEventListener('change', async (e) => {
 $('btn-new').addEventListener('click', () => {
   if (doc.layers.length && !confirm('Start a new livery? Unsaved changes are kept only in autosave.')) return;
   doc = createDoc();
+  setCurrentProject(null);
   afterDocLoad();
   status('New project.');
 });
@@ -1708,13 +1720,179 @@ function syncDocUI() {
   syncRegionUI();
 }
 
+// ---------- projects (browser library) ----------
+// Named projects live in IndexedDB next to the autosave. The autosave key is
+// still written on every save (crash recovery is unchanged); when a project
+// is open, the same serialized doc also writes through to its project record.
+
+const projectsModal = $('projects-modal');
+
+function setCurrentProject(id, name) {
+  currentProjectId = id;
+  $('current-project-label').textContent = id ? name : 'unsaved';
+  persist.saveSetting('currentProject', id).catch(() => {});
+}
+
+// 128px JPEG of the current paint for the project browser — built at most
+// once per settled autosave, never on input events
+function projectThumb() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(renderPaint(doc), 0, 0, 128, 128);
+  return c.toDataURL('image/jpeg', 0.6);
+}
+
+function relTime(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.round(m / 60);
+  if (h < 24) return h + ' h ago';
+  const d = Math.round(h / 24);
+  return d === 1 ? 'yesterday' : d + ' days ago';
+}
+
+async function refreshProjectList() {
+  const list = $('project-list');
+  const projects = (await persist.listProjects().catch(() => []))
+    .slice().sort((a, b) => b.updatedAt - a.updatedAt);
+  list.innerHTML = '';
+  if (!projects.length) {
+    const li = document.createElement('li');
+    li.className = 'project-list-empty';
+    li.textContent = 'No projects yet — "Save as project" keeps the current livery in this browser.';
+    list.appendChild(li);
+    return;
+  }
+  for (const p of projects) {
+    const li = document.createElement('li');
+    li.className = 'project-item' + (p.id === currentProjectId ? ' current' : '');
+
+    const thumb = document.createElement('img');
+    thumb.className = 'project-thumb';
+    thumb.alt = '';
+    if (p.thumb) thumb.src = p.thumb;
+
+    const info = document.createElement('div');
+    info.className = 'project-info';
+    const pname = document.createElement('span');
+    pname.className = 'pname';
+    pname.textContent = p.name;
+    const ptime = document.createElement('span');
+    ptime.className = 'ptime';
+    ptime.textContent = relTime(p.updatedAt) + (p.id === currentProjectId ? ' · open' : '');
+    info.append(pname, ptime);
+
+    const open = document.createElement('button');
+    open.className = 'sm-btn';
+    open.textContent = 'Open';
+    open.addEventListener('click', () => openProject(p));
+
+    const ren = document.createElement('button');
+    ren.className = 'sm-btn';
+    ren.textContent = 'Rename';
+    ren.addEventListener('click', async () => {
+      const name = prompt('Rename project:', p.name);
+      if (name === null || !name.trim()) return;
+      await persist.renameProject(p.id, name.trim()).catch(() => {});
+      if (p.id === currentProjectId) {
+        doc.name = name.trim();
+        $('project-name').value = doc.name;
+        setCurrentProject(p.id, doc.name);
+        scheduleAutosave();
+      }
+      refreshProjectList();
+    });
+
+    const del = document.createElement('button');
+    del.className = 'sm-btn danger';
+    del.textContent = 'Delete';
+    del.addEventListener('click', async () => {
+      if (!confirm(`Delete project "${p.name}"? This cannot be undone.`)) return;
+      await persist.deleteProject(p.id).catch(() => {});
+      // the doc stays in the editor — it just stops writing through
+      if (p.id === currentProjectId) setCurrentProject(null);
+      refreshProjectList();
+      status(`Deleted project "${p.name}".`);
+    });
+
+    li.append(thumb, info, open, ren, del);
+    list.appendChild(li);
+  }
+}
+
+async function openProject(p) {
+  if (!currentProjectId && doc.layers.length
+      && !confirm('Open this project? Your current unsaved livery is kept only in autosave, which now follows the opened project.')) return;
+  flushAutosave(); // last settled edits of the outgoing doc land in its own project
+  try {
+    const data = await persist.loadProject(p.id);
+    if (!data) {
+      status('Project data is missing — removing it from the list.', 'err');
+      await persist.deleteProject(p.id).catch(() => {});
+      refreshProjectList();
+      return;
+    }
+    doc = await deserializeDoc(data);
+    setCurrentProject(p.id, p.name);
+    resetHistory();
+    afterDocLoad(); // syncDocUI + markDirty + baseline history snapshot
+    closeProjects();
+    status(`Opened "${p.name}".`, 'ok');
+  } catch {
+    status('Could not open that project.', 'err');
+  }
+}
+
+function openProjects() { projectsModal.hidden = false; refreshProjectList(); }
+function closeProjects() { projectsModal.hidden = true; }
+
+$('btn-projects').addEventListener('click', openProjects);
+$('projects-close').addEventListener('click', closeProjects);
+projectsModal.addEventListener('click', (e) => {
+  if (e.target === projectsModal) closeProjects(); // backdrop click
+});
+
+$('btn-save-as-project').addEventListener('click', async () => {
+  const name = prompt('Project name:', doc.name || 'untitled livery');
+  if (name === null || !name.trim()) return;
+  doc.name = name.trim();
+  $('project-name').value = doc.name;
+  const id = Date.now().toString(36);
+  try {
+    await persist.saveProject(id, { name: doc.name, thumb: projectThumb() }, serializeDoc(doc));
+    setCurrentProject(id, doc.name);
+    refreshProjectList();
+    status(`Saved as project "${doc.name}" — it autosaves while open.`, 'ok');
+  } catch (err) {
+    status('Could not save project: ' + (err.message || 'storage error'), 'err');
+  }
+});
+
+$('btn-new-project').addEventListener('click', () => {
+  closeProjects();
+  $('btn-new').click(); // shared new-doc flow (confirm + setCurrentProject(null))
+});
+
 // ---------- autosave ----------
 
 async function runAutosave() {
   autosaveTimer = null;
   captureHistory();
+  // snapshot doc + project binding synchronously — flushAutosave can run
+  // right before a project switch swaps both out from under the awaits
+  const data = serializeDoc(doc);
+  const projectId = currentProjectId;
+  const meta = projectId ? { name: doc.name, thumb: projectThumb() } : null;
   try {
-    await persist.saveAutosave(serializeDoc(doc));
+    await persist.saveAutosave(data);
+    if (projectId) {
+      await persist.saveProject(projectId, meta, data);
+      // topbar rename lands in the index on save — keep the label current
+      if (projectId === currentProjectId) $('current-project-label').textContent = meta.name;
+    }
     $('status-autosave').textContent = 'autosaved ' + new Date().toLocaleTimeString();
   } catch { /* quota or private mode — non-fatal */ }
 }
@@ -2080,6 +2258,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
   if (e.key === 'Escape') {
     if (!$('help-modal').hidden) { $('help-modal').hidden = true; return; }
+    if (!projectsModal.hidden) { closeProjects(); return; }
     if (!libraryModal.hidden) { closeLibrary(); return; }
     if (annotateMode) { setAnnotateMode(false); return; }
     if (wandMode) { setWandMode(false); return; }
@@ -2142,6 +2321,20 @@ window.addEventListener('resize', requestRender);
       doc = await deserializeDoc(auto);
       status('Restored autosaved project.');
     } catch { /* corrupt autosave — start fresh */ }
+  }
+
+  // the autosaved doc wins (crash recovery), but re-associate it with the
+  // project it was writing through to so the link survives a browser restart
+  const savedProject = await persist.loadSetting('currentProject').catch(() => null);
+  if (savedProject) {
+    const entry = (await persist.listProjects().catch(() => [])).find(p => p.id === savedProject);
+    // set directly — setCurrentProject would redundantly re-save the setting
+    if (entry) {
+      currentProjectId = entry.id;
+      $('current-project-label').textContent = entry.name;
+    } else {
+      persist.saveSetting('currentProject', null).catch(() => {}); // project was deleted
+    }
   }
 
   afterDocLoad();

@@ -52,6 +52,40 @@ export const clearAutosave = () => kvDelete('autosave');
 export const saveSetting = (key, value) => kvSet('setting:' + key, value);
 export const loadSetting = (key) => kvGet('setting:' + key);
 
+// ---------- projects ----------
+// Index entries are {id, name, updatedAt, thumb} — thumb is a small dataURL
+// kept in the index so the project browser lists without loading full docs.
+
+const PROJECTS_INDEX = 'projects:index';
+
+export const listProjects = async () => (await kvGet(PROJECTS_INDEX)) || [];
+
+export async function saveProject(id, meta, data) {
+  await kvSet('project:' + id, data);
+  const index = await listProjects();
+  const i = index.findIndex(p => p.id === id);
+  const entry = { ...(i === -1 ? {} : index[i]), id, ...meta, updatedAt: Date.now() };
+  if (i === -1) index.push(entry); else index[i] = entry;
+  await kvSet(PROJECTS_INDEX, index);
+}
+
+export const loadProject = (id) => kvGet('project:' + id);
+
+export async function deleteProject(id) {
+  await kvDelete('project:' + id);
+  await kvSet(PROJECTS_INDEX, (await listProjects()).filter(p => p.id !== id));
+}
+
+export async function renameProject(id, name) {
+  const index = await listProjects();
+  const entry = index.find(p => p.id === id);
+  if (!entry) return;
+  entry.name = name;
+  await kvSet(PROJECTS_INDEX, index);
+  const data = await kvGet('project:' + id); // stored doc name stays in agreement
+  if (data) { data.name = name; await kvSet('project:' + id, data); }
+}
+
 // ---------- File System Access ----------
 
 export const fsSupported = () => 'showDirectoryPicker' in window;
