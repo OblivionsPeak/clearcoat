@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Khand:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101114'/%3E%3Cpath d='M6 22 L14 8 H20 L12 22 Z' fill='%23ff4d00'/%3E%3Cpath d='M16 22 L24 8 H26 L18 22 Z' fill='%23e8e6e1'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -21,7 +22,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.29</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.30</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -85,6 +86,7 @@
       </div>
       <div class="template-row" style="margin-top:8px">
         <button id="btn-load-regions" class="sm-btn wide" title="Load a region map (.json) — labels the sheet's panels for hover labels, the Regions overlay, and one-click Mirror">Load region map…</button>
+        <button id="btn-get-map" class="sm-btn" title="Browse community region maps shared on GitHub and load one for your car">Get map…</button>
         <button id="btn-clear-regions" class="sm-btn icon" title="Remove region map" hidden>✕</button>
       </div>
       <div class="template-row" id="region-map-info" style="margin-top:6px; align-items:center" hidden>
@@ -377,7 +379,7 @@
           <li>Click the same spot repeatedly to cycle through stacked layers.</li>
           <li><b>Studio</b> wraps your livery around 3D geometry under showroom light — the honest way to judge pearl, candy, flake and chrome, since they only read on curvature. It docks beside the canvas, so keep editing while it updates live.</li>
           <li><b>Region maps</b> label the sheet's panels (Template panel) — hover shows where you are, <b>Regions</b> overlays the map, and <b>Mirror</b> drops a flipped copy of a layer onto the partner panel. Build your own map with <b>Annotate</b>.</li>
-          <li>Seeing something odd? Check the <b>version number</b> top-left and hard-refresh (Ctrl+F5) — the site caches for ~10 min after updates.</li>
+          <li>Updates arrive with a <b>"New version ready"</b> toast — click Reload to apply. The build you're on shows as the <b>version number</b> top-left.</li>
           <li>Live save needs Chrome/Edge (Brave: enable File System Access in brave://flags).</li>
         </ul>
       </div>
@@ -396,6 +398,16 @@
     </h2>
     <p class="hint" style="margin-top:0">Projects live in this browser (IndexedDB). The open project autosaves as you work. Use topbar <b>Save</b> for a portable .clearcoat.json.</p>
     <ul id="project-list" class="project-list"></ul>
+  </div>
+</div>
+
+<div id="maps-modal" hidden>
+  <div class="library-panel maps-panel">
+    <h2 class="panel-title">Community region maps
+      <span class="title-actions"><button id="maps-close" class="sm-btn icon" title="Close (Esc)">✕</button></span>
+    </h2>
+    <p class="hint" style="margin-top:0">Region maps shared by other Clearcoat users — one per car, fetched from GitHub. Pick yours to get panel labels and Mirror support.</p>
+    <ul id="maps-list" class="project-list"></ul>
   </div>
 </div>
 

@@ -723,6 +723,33 @@ input  { font-family: inherit; }
   display: flex; align-items: center; justify-content: center;
 }
 .projects-panel { max-width: 560px; }
+
+/* community region maps browser — same backdrop/panel/list styling */
+#maps-modal {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(10, 11, 14, .72);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.maps-panel { max-width: 480px; }
+.project-list-empty a { color: var(--cyan); }
+
+/* service-worker update notice */
+#sw-update-toast {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--statusbar-h) + 12px);
+  z-index: 80;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel-raise);
+  border: 1px solid var(--seam-bright);
+  border-left: 3px solid var(--cyan);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+  font-size: 12px;
+  color: var(--ink);
+}
 .current-project {
   display: inline-block;
   font-size: 10px;

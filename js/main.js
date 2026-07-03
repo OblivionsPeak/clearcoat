@@ -1220,20 +1220,127 @@ function syncRegionUI() {
   syncInspector(); // Mirror button availability
 }
 
+// shared by the file loader and the community "Get map…" flow — validates,
+// applies to the doc, and syncs everything that watches the region map
+function applyRegionMap(data) {
+  doc.regionMap = parseRegionMap(data);
+  syncRegionUI();
+  scheduleAutosave();
+  requestRender();
+  return doc.regionMap;
+}
+
 $('btn-load-regions').addEventListener('click', () => $('file-regions').click());
 $('file-regions').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
   try {
-    doc.regionMap = parseRegionMap(JSON.parse(await file.text()));
-    syncRegionUI();
-    scheduleAutosave();
-    requestRender();
-    status(`Region map loaded: ${doc.regionMap.car} (${doc.regionMap.regions.length} regions) — hover the sheet for panel names.`, 'ok');
+    const map = applyRegionMap(JSON.parse(await file.text()));
+    status(`Region map loaded: ${map.car} (${map.regions.length} regions) — hover the sheet for panel names.`, 'ok');
   } catch (err) {
     status('Could not load region map: ' + (err.message || 'invalid JSON'), 'err');
   }
+});
+
+// ---------- community region maps (maps/ on GitHub) ----------
+
+const MAPS_RAW_BASE = 'https://raw.githubusercontent.com/OblivionsPeak/clearcoat/main/maps/';
+const MAPS_FOLDER_URL = 'https://github.com/OblivionsPeak/clearcoat/tree/main/maps';
+const mapsModal = $('maps-modal');
+
+async function fetchMapsJson(file) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(MAPS_RAW_BASE + file, { signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function mapsListMessage(text, withLink) {
+  const list = $('maps-list');
+  list.innerHTML = '';
+  const li = document.createElement('li');
+  li.className = 'project-list-empty';
+  li.textContent = text;
+  if (withLink) {
+    li.append(' ');
+    const a = document.createElement('a');
+    a.href = MAPS_FOLDER_URL;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'maps folder ↗';
+    li.appendChild(a);
+  }
+  list.appendChild(li);
+}
+
+async function openMapsModal() {
+  mapsModal.hidden = false;
+  mapsListMessage('Fetching map list…');
+  let index;
+  try {
+    index = await fetchMapsJson('index.json');
+    if (!Array.isArray(index)) throw new Error('bad index');
+  } catch {
+    mapsListMessage('Could not reach GitHub for the map list — you may be offline. Try again later, or load a map from a file instead.');
+    return;
+  }
+  if (mapsModal.hidden) return; // closed while fetching
+  if (!index.length) {
+    mapsListMessage('No community maps yet — use Annotate to map your car and contribute yours!', true);
+    return;
+  }
+  const list = $('maps-list');
+  list.innerHTML = '';
+  for (const entry of index) {
+    if (!entry || typeof entry.file !== 'string') continue;
+    const label = typeof entry.label === 'string' && entry.label ? entry.label : entry.file;
+    const li = document.createElement('li');
+    li.className = 'project-item';
+
+    const info = document.createElement('div');
+    info.className = 'project-info';
+    const name = document.createElement('span');
+    name.className = 'pname';
+    name.textContent = label;
+    const car = document.createElement('span');
+    car.className = 'ptime mono';
+    car.textContent = typeof entry.car === 'string' ? entry.car : '';
+    info.append(name, car);
+
+    const load = document.createElement('button');
+    load.className = 'sm-btn';
+    load.textContent = 'Load';
+    load.addEventListener('click', async () => {
+      load.disabled = true;
+      load.textContent = 'Loading…';
+      try {
+        applyRegionMap(await fetchMapsJson(entry.file));
+        closeMapsModal();
+        status(`Loaded region map for ${label}`, 'ok');
+      } catch (err) {
+        load.disabled = false;
+        load.textContent = 'Load';
+        status(`Could not load the map for ${label}: ` + (err.name === 'AbortError' ? 'timed out — you may be offline' : err.message || 'fetch failed'), 'err');
+      }
+    });
+
+    li.append(info, load);
+    list.appendChild(li);
+  }
+}
+
+function closeMapsModal() { mapsModal.hidden = true; }
+
+$('btn-get-map').addEventListener('click', openMapsModal);
+$('maps-close').addEventListener('click', closeMapsModal);
+mapsModal.addEventListener('click', (e) => {
+  if (e.target === mapsModal) closeMapsModal(); // backdrop click
 });
 
 $('btn-clear-regions').addEventListener('click', () => {
@@ -2259,6 +2366,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!$('help-modal').hidden) { $('help-modal').hidden = true; return; }
     if (!projectsModal.hidden) { closeProjects(); return; }
+    if (!mapsModal.hidden) { closeMapsModal(); return; }
     if (!libraryModal.hidden) { closeLibrary(); return; }
     if (annotateMode) { setAnnotateMode(false); return; }
     if (wandMode) { setWandMode(false); return; }
@@ -2340,3 +2448,60 @@ window.addEventListener('resize', requestRender);
   afterDocLoad();
   await refreshFsStatus();
 })();
+
+// ---------- service worker (offline shell + update notice) ----------
+// sw.js precaches the app shell under a versioned cache; bump its VERSION
+// together with #app-version on every deploy. Registered with a relative
+// path so the scope resolves correctly under the /clearcoat/ subpath.
+
+if ('serviceWorker' in navigator) {
+  let swReloaded = false; // guard against controllerchange reload loops
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swReloaded) return;
+    swReloaded = true;
+    location.reload();
+  });
+
+  const showUpdateToast = (worker) => {
+    if (document.getElementById('sw-update-toast')) return;
+    const toast = document.createElement('div');
+    toast.id = 'sw-update-toast';
+
+    const msg = document.createElement('span');
+    msg.textContent = 'New version ready —';
+
+    const reload = document.createElement('button');
+    reload.className = 'sm-btn';
+    reload.textContent = 'Reload';
+    reload.addEventListener('click', () => {
+      reload.disabled = true;
+      worker.postMessage({ type: 'SKIP_WAITING' }); // activation fires controllerchange → reload
+    });
+
+    const dismiss = document.createElement('button');
+    dismiss.className = 'sm-btn icon';
+    dismiss.title = 'Dismiss — the update applies next visit';
+    dismiss.textContent = '✕';
+    dismiss.addEventListener('click', () => toast.remove());
+
+    toast.append(msg, reload, dismiss);
+    document.body.appendChild(toast);
+  };
+
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      // update already downloaded and parked while we weren't looking
+      if (reg.waiting && navigator.serviceWorker.controller) showUpdateToast(reg.waiting);
+      reg.addEventListener('updatefound', () => {
+        const worker = reg.installing;
+        if (!worker) return;
+        worker.addEventListener('statechange', () => {
+          // 'installed' with an existing controller = an update is waiting
+          // (without a controller it's the very first install — no toast)
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) showUpdateToast(worker);
+        });
+      });
+    } catch { /* blocked or unsupported — the app works fine without it */ }
+  });
+}
