@@ -82,8 +82,19 @@ export async function renameProject(id, name) {
   if (!entry) return;
   entry.name = name;
   await kvSet(PROJECTS_INDEX, index);
-  const data = await kvGet('project:' + id); // stored doc name stays in agreement
-  if (data) { data.name = name; await kvSet('project:' + id, data); }
+  // stored doc name stays in agreement — docs are stored as JSON strings
+  // (v0.31+) or plain objects (older saves)
+  const data = await kvGet('project:' + id);
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data);
+      parsed.name = name;
+      await kvSet('project:' + id, JSON.stringify(parsed));
+    } catch { /* corrupt — leave it */ }
+  } else if (data) {
+    data.name = name;
+    await kvSet('project:' + id, data);
+  }
 }
 
 // ---------- File System Access ----------
@@ -146,4 +157,16 @@ export async function listFolder(dirHandle) {
     }
   } catch { /* permission revoked mid-iteration */ }
   return names;
+}
+
+// All subdirectory names (non-recursive) — used to offer car-folder selection
+// when the user links the paints root instead of a single car folder.
+export async function listSubdirs(dirHandle) {
+  const names = [];
+  try {
+    for await (const entry of dirHandle.values()) {
+      if (entry.kind === 'directory') names.push(entry.name);
+    }
+  } catch { /* permission revoked mid-iteration */ }
+  return names.sort((a, b) => a.localeCompare(b));
 }

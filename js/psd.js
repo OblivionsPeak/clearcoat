@@ -1,6 +1,7 @@
 // PSD template import — extracts the wireframe from official iRacing template PSDs
-// so users never need Photoshop. Uses ag-psd, lazy-loaded from CDN only when a
-// .psd is actually opened (keeps the core app dependency-free).
+// so users never need Photoshop. Uses ag-psd, vendored locally (js/vendor/ag-psd.min.js)
+// and lazy-loaded only when a .psd is actually opened (keeps the core app load lean,
+// with zero runtime CDN dependencies).
 
 let agPsdPromise = null;
 
@@ -9,9 +10,9 @@ function loadAgPsd() {
   if (!agPsdPromise) {
     agPsdPromise = new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'https://unpkg.com/ag-psd@14/dist/bundle.js';
+      s.src = 'js/vendor/ag-psd.min.js';
       s.onload = () => window.agPsd ? resolve(window.agPsd) : reject(new Error('PSD reader failed to initialize'));
-      s.onerror = () => { agPsdPromise = null; reject(new Error('Could not load the PSD reader — check your connection')); };
+      s.onerror = () => { agPsdPromise = null; reject(new Error('Could not load the PSD reader')); };
       document.head.appendChild(s);
     });
   }

@@ -6,7 +6,7 @@
 // the reload that activates it. If VERSION doesn't change, returning users
 // keep being served the old cached shell.
 
-const VERSION = 'v0.30';
+const VERSION = 'v0.31';
 const CACHE = 'clearcoat-' + VERSION;
 
 // app shell — every path here must exist in the repo
@@ -27,6 +27,11 @@ const PRECACHE = [
   './js/studio.js',
   './js/tga.js',
   './js/wand.js',
+  './js/vendor/ag-psd.min.js',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-192-maskable.png',
+  './icons/icon-512-maskable.png',
 ];
 
 self.addEventListener('install', (event) => {

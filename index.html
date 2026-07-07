@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Khand:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101114'/%3E%3Cpath d='M6 22 L14 8 H20 L12 22 Z' fill='%23ff4d00'/%3E%3Cpath d='M16 22 L24 8 H26 L18 22 Z' fill='%23e8e6e1'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -22,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.30</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.31</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -45,7 +46,8 @@
     </select>
     <label class="custid-label" for="custid">iRacing ID</label>
     <input id="custid" class="custid" type="text" inputmode="numeric" placeholder="123456" spellcheck="false">
-    <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints/<car> folder once — Clearcoat remembers it">Link Folder</button>
+    <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints folder once — link the paints root and choose the car here, or link a single car folder directly">Link Folder</button>
+    <select id="paints-car" class="custid paint-target" title="Which car folder inside the linked paints folder to save into" aria-label="Car folder" hidden></select>
     <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder (your existing paint is snapshotted to clearcoat-backup/ first) — the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
     <label class="tb-check" title="Stream every settled edit straight into the iRacing folder — keep the sim showroom open on a second monitor and it becomes Clearcoat's live preview"><input type="checkbox" id="live-sync"> Live</label>
     <label class="tb-check" title="iRacing Custom Number paints use car_num_<id>.tga instead of car_<id>.tga — check this if your number is part of the paint"><input type="checkbox" id="custom-number"> Custom&nbsp;#</label>
@@ -219,6 +221,17 @@
         <span class="mono" id="ins-opacity-val">100%</span>
       </div>
 
+      <div class="slider-row">
+        <label for="ins-blend" title="How this layer's paint composites over what's beneath — Multiply for shading/weathering, Screen for glows, Overlay/Soft light for contrast effects">Blend</label>
+        <select id="ins-blend" class="tune-select">
+          <option value="normal">Normal</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+          <option value="soft-light">Soft light</option>
+        </select>
+      </div>
+
       <label class="tb-check" style="margin-top:10px" title="Don't paint this layer's color — only stamp its material into the spec map. Use over an imported livery to give parts of the existing design a finish (pearl, candy, flake…) without repainting them.">
         <input type="checkbox" id="ins-spec-only"> Material only (don't paint)
       </label>
@@ -367,6 +380,9 @@
           <tr><td class="mono">Del</td><td>Delete layer</td></tr>
           <tr><td class="mono">Arrows (+Shift)</td><td>Nudge 1px (10px)</td></tr>
           <tr><td class="mono">Ctrl+click</td><td>Multi-select in layer list</td></tr>
+          <tr><td class="mono">Shift+click</td><td>Multi-select on canvas</td></tr>
+          <tr><td class="mono">Shift+drag</td><td>Marquee-select on canvas</td></tr>
+          <tr><td class="mono">Alt (while moving)</td><td>Disable snapping</td></tr>
           <tr><td class="mono">Shift</td><td>Snap rotation 15°</td></tr>
           <tr><td class="mono">Scroll / Space-drag</td><td>Zoom / pan</td></tr>
           <tr><td class="mono">Esc</td><td>Exit tool / deselect</td></tr>
@@ -376,6 +392,8 @@
           <li>🔒 <b>Lock</b> a full-sheet layer (imported liveries auto-lock) so clicks pass through it.</li>
           <li>⧉ duplicates a layer right from its row.</li>
           <li><b>Material only</b> stamps a finish without painting — pearl on existing artwork.</li>
+          <li><b>Blend</b> (inspector) composites a layer over the paint beneath — Multiply for shading/weathering, Screen for glows.</li>
+          <li>Moving layers <b>snap</b> to the sheet center/edges and region-map lines — hold <b>Alt</b> to move freely.</li>
           <li>Click the same spot repeatedly to cycle through stacked layers.</li>
           <li><b>Studio</b> wraps your livery around 3D geometry under showroom light — the honest way to judge pearl, candy, flake and chrome, since they only read on curvature. It docks beside the canvas, so keep editing while it updates live.</li>
           <li><b>Region maps</b> label the sheet's panels (Template panel) — hover shows where you are, <b>Regions</b> overlays the map, and <b>Mirror</b> drops a flipped copy of a layer onto the partner panel. Build your own map with <b>Annotate</b>.</li>
@@ -408,6 +426,18 @@
     </h2>
     <p class="hint" style="margin-top:0">Region maps shared by other Clearcoat users — one per car, fetched from GitHub. Pick yours to get panel labels and Mirror support.</p>
     <ul id="maps-list" class="project-list"></ul>
+  </div>
+</div>
+
+<div id="ask-modal" hidden>
+  <div class="library-panel ask-panel">
+    <h2 class="panel-title"><span id="ask-title">Input</span>
+      <span class="title-actions"><button id="ask-cancel" class="sm-btn icon" title="Cancel (Esc)">✕</button></span>
+    </h2>
+    <div id="ask-fields"></div>
+    <div class="btn-row ask-actions">
+      <button id="ask-ok" class="sm-btn accent">OK</button>
+    </div>
   </div>
 </div>
 

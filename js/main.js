@@ -1,8 +1,9 @@
 import {
-  SIZE, MATERIALS, createDoc, createImageLayer, createPatternLayer, createFillLayer,
+  SIZE, MATERIALS, BLEND_MODES, createDoc, createImageLayer, createPatternLayer, createFillLayer,
   createTextLayer, regenerateText, fillShapePath, fillPaintStyle,
   GOOGLE_FONTS, registerCustomFont,
   renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
+  buildDragCache, renderPaintWithDrag,
   serializeDoc, deserializeDoc, loadImage,
   templateOverlay, defaultParams, resolveParams, mixHex,
 } from './engine.js';
@@ -57,11 +58,16 @@ function docToScreen(dx, dy) {
   return { x: (dx + view.x) * view.zoom, y: (dy + view.y) * view.zoom };
 }
 
+function syncZoomReadout() {
+  $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%';
+}
+
 function fitView() {
   const w = viewport.clientWidth, h = viewport.clientHeight;
   view.zoom = Math.min(w / SIZE, h / SIZE) * 0.92;
   view.x = (w / view.zoom - SIZE) / 2;
   view.y = (h / view.zoom - SIZE) / 2;
+  syncZoomReadout();
   requestRender();
 }
 
@@ -72,6 +78,7 @@ function setZoom(z, cx, cy) {
   const after = screenToDoc(cx, cy);
   view.x += after.x - before.x;
   view.y += after.y - before.y;
+  syncZoomReadout();
   requestRender();
 }
 
@@ -87,6 +94,7 @@ function requestRender() {
 function markDirty() {
   dirty = true;
   studioDirty = true; // studio picks fresh maps up on its next frame
+  skipNextCapture = false; // a real edit followed an undo/redo — capture it
   requestRender();
   scheduleAutosave();
 }
@@ -98,39 +106,53 @@ function markDirty() {
 const undoStack = [];
 const redoStack = [];
 let suppressHistory = false;
+// set right after an undo/redo restore: the next settled capture would only
+// re-record the restored state (text layers re-rasterize, so the string may
+// differ and would wrongly clear the redo stack). Any real edit clears it.
+let skipNextCapture = false;
 
-// Layer srcs are large base64 data URLs — duplicating them into all 40
-// snapshot strings costs real memory. History snapshots store a short intern
-// ref instead; the actual srcs live once in a side table. Project export and
-// autosave still serialize full srcs — only history is interned.
+// Layer srcs, the template image, and custom font data are large base64
+// strings — duplicating them into all 40 snapshot strings costs real memory.
+// History snapshots store a short intern ref instead; the actual strings live
+// once in a side table. Project export and autosave still serialize the full
+// data — only history is interned.
 const SRC_REF = '@cc-history-src:';
 const internedSrcs = new Map();   // ref → src
 const internedRefs = new Map();   // src → ref (dedupe)
 let internSeq = 0;
 
-// swap layer srcs for intern refs — serializeDoc returns fresh layer
-// objects, so mutating them never touches the live doc
+function internString(s) {
+  let ref = internedRefs.get(s);
+  if (!ref) {
+    ref = SRC_REF + (++internSeq);
+    internedRefs.set(s, ref);
+    internedSrcs.set(ref, s);
+  }
+  return ref;
+}
+
+// swap big strings for intern refs — serializeDoc returns fresh objects,
+// so mutating them never touches the live doc
 function internSnapshot(data) {
   for (const l of data.layers) {
-    if (typeof l.src !== 'string' || !l.src) continue;
-    let ref = internedRefs.get(l.src);
-    if (!ref) {
-      ref = SRC_REF + (++internSeq);
-      internedRefs.set(l.src, ref);
-      internedSrcs.set(ref, l.src);
-    }
-    l.src = ref;
+    if (typeof l.src === 'string' && l.src) l.src = internString(l.src);
+  }
+  if (typeof data.template === 'string' && data.template) {
+    data.template = internString(data.template);
+  }
+  for (const f of (data.customFonts || [])) {
+    if (typeof f.data === 'string' && f.data) f.data = internString(f.data);
   }
   return data;
 }
 
-// swap intern refs back to real srcs before deserializeDoc sees them
+// swap intern refs back to real strings before deserializeDoc sees them
 function resolveSnapshot(data) {
-  for (const l of data.layers) {
-    if (typeof l.src === 'string' && l.src.startsWith(SRC_REF)) {
-      l.src = internedSrcs.get(l.src) ?? null;
-    }
-  }
+  const resolve = (s) =>
+    (typeof s === 'string' && s.startsWith(SRC_REF)) ? (internedSrcs.get(s) ?? null) : s;
+  for (const l of data.layers) l.src = resolve(l.src);
+  data.template = resolve(data.template);
+  for (const f of (data.customFonts || [])) f.data = resolve(f.data);
   return data;
 }
 
@@ -146,9 +168,11 @@ function pruneInternedSrcs() {
   }
 }
 
-function captureHistory() {
+// data: an already-serialized doc (it gets interned/mutated — don't reuse it)
+function captureHistory(data) {
   if (suppressHistory) return;
-  const snap = JSON.stringify(internSnapshot(serializeDoc(doc)));
+  if (skipNextCapture) { skipNextCapture = false; return; }
+  const snap = JSON.stringify(internSnapshot(data || serializeDoc(doc)));
   if (undoStack[undoStack.length - 1] === snap) return;
   undoStack.push(snap);
   const evicted = undoStack.length > 40;
@@ -182,8 +206,10 @@ async function applyHistory(snap) {
     syncDocUI();
     markDirty();
   } finally {
-    // lift suppression after the autosave debounce would have fired
-    setTimeout(() => { suppressHistory = false; }, 1500);
+    suppressHistory = false;
+    // the autosave this restore scheduled must not re-capture the restored
+    // state; markDirty from a real edit lifts this immediately
+    skipNextCapture = true;
   }
   updateUndoButtons();
 }
@@ -234,6 +260,10 @@ function draw() {
     );
     composite = frame || renderPaint(doc); // WebGL unavailable → plain paint
     compositeCache = null; // shine touched both singletons — re-render next time
+  } else if (drag && dragPaintCache && !specView) {
+    // live layer drag: static slabs pre-rendered, only moving layers redraw
+    composite = renderPaintWithDrag(doc, dragPaintCache);
+    compositeCache = null;
   } else {
     const mode = specView ? 'spec' : 'paint';
     if (dirty || !compositeCache || compositeCacheMode !== mode) {
@@ -272,15 +302,32 @@ function draw() {
   // region map overlay — screen space, forced on while annotating
   if ((regionsView || annotateMode) && doc.regionMap) drawRegionOverlay();
 
-  // annotate drag — live rectangle preview
-  if (drag && drag.mode === 'annotate') {
+  // annotate / marquee drag — live rectangle preview
+  if (drag && (drag.mode === 'annotate' || drag.mode === 'marquee')) {
     const a = docToScreen(drag.startP.x, drag.startP.y);
     const b = docToScreen(drag.curP.x, drag.curP.y);
     vctx.save();
-    vctx.strokeStyle = '#ff4d00';
+    vctx.strokeStyle = drag.mode === 'annotate' ? '#ff4d00' : '#2dd6c1';
     vctx.lineWidth = 1.5;
     vctx.setLineDash([4, 4]);
     vctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    vctx.restore();
+  }
+
+  // snap guides — full-viewport lines where the dragged layer locked on
+  if (drag && (drag.snapLineX != null || drag.snapLineY != null)) {
+    vctx.save();
+    vctx.strokeStyle = 'rgba(45, 214, 193, .8)';
+    vctx.lineWidth = 1;
+    vctx.setLineDash([6, 4]);
+    if (drag.snapLineX != null) {
+      const x = docToScreen(drag.snapLineX, 0).x;
+      vctx.beginPath(); vctx.moveTo(x, 0); vctx.lineTo(x, h); vctx.stroke();
+    }
+    if (drag.snapLineY != null) {
+      const y = docToScreen(0, drag.snapLineY).y;
+      vctx.beginPath(); vctx.moveTo(0, y); vctx.lineTo(w, y); vctx.stroke();
+    }
     vctx.restore();
   }
 
@@ -370,7 +417,43 @@ function drawRegionOverlay() {
 
 // ---------- pointer interaction ----------
 
-let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan', ... }
+let drag = null; // { mode: 'move'|'scale'|'rotate'|'pan'|'marquee'|..., ... }
+let dragPaintCache = null; // engine drag-slab cache while a layer drag is live
+
+// pre-render the static slabs around the layers about to move (paint view
+// only — spec/shine re-render fully anyway); null means "not applicable"
+function startLayerDrag(ids) {
+  dragPaintCache = (!specView && !shineView) ? buildDragCache(doc, ids) : null;
+}
+
+// ---------- snapping ----------
+// While moving, layer centers (and region edges) snap to the sheet edges +
+// center and to region-map lines. Hold Alt to move freely.
+
+function snapCandidates() {
+  const xs = new Set([0, SIZE / 2, SIZE]);
+  const ys = new Set([0, SIZE / 2, SIZE]);
+  if (doc.regionMap) {
+    for (const r of doc.regionMap.regions) {
+      xs.add(r.x); xs.add(r.x + r.w / 2); xs.add(r.x + r.w);
+      ys.add(r.y); ys.add(r.y + r.h / 2); ys.add(r.y + r.h);
+    }
+  }
+  return { xs: [...xs], ys: [...ys] };
+}
+
+// best candidate line within tol for any of the feature offsets (e.g. a
+// region's left edge / center / right edge); returns { v, line } or null
+function snapEdge(v, spans, cands, tol) {
+  let best = null, bd = tol;
+  for (const off of spans) {
+    for (const c of cands) {
+      const d = Math.abs(v + off - c);
+      if (d < bd) { bd = d; best = { v: c - off, line: c }; }
+    }
+  }
+  return best;
+}
 
 function handleAt(sx, sy) {
   const sel = selectedLayer();
@@ -488,12 +571,22 @@ viewport.addEventListener('pointerdown', (e) => {
         startScale: sel.scale,
       };
     }
+    startLayerDrag(new Set([sel.id]));
     return;
   }
 
   const p = screenToDoc(sx, sy);
   const hits = hitTestAll(doc, p.x, p.y);
   let hit = hits[0] || null;
+
+  // Shift+click toggles a layer in/out of the selection; Shift+drag on empty
+  // sheet rubber-bands a multi-selection
+  if (e.shiftKey) {
+    if (hit) toggleSelect(hit.id);
+    else drag = { mode: 'marquee', startP: p, curP: p };
+    return;
+  }
+
   // clicking again on an already-selected spot cycles down the stack
   if (hits.length > 1) {
     const idx = hits.findIndex(l => l.id === selectedId);
@@ -502,18 +595,18 @@ viewport.addEventListener('pointerdown', (e) => {
   if (hit) {
     // dragging within a multi-selection moves the whole selection
     if (selectedIds.has(hit.id) && selectedIds.size > 1) {
-      drag = {
-        mode: 'move-multi', startP: p,
-        starts: selectedLayers().filter(l => !l.locked).map(l => ({
-          layer: l, x: l.x, y: l.y, rx: l.rx, ry: l.ry,
-        })),
-      };
+      const starts = selectedLayers().filter(l => !l.locked).map(l => ({
+        layer: l, x: l.x, y: l.y, rx: l.rx, ry: l.ry,
+      }));
+      drag = { mode: 'move-multi', startP: p, starts };
+      startLayerDrag(new Set(starts.map(s => s.layer.id)));
       return;
     }
     selectLayer(hit.id);
     drag = isRegionLayer(hit)
-      ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry }
-      : { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y };
+      ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry, snaps: snapCandidates() }
+      : { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y, snaps: snapCandidates() };
+    startLayerDrag(new Set([hit.id]));
   } else {
     selectLayer(null);
     drag = { mode: 'pan', startX: sx, startY: sy, vx: view.x, vy: view.y };
@@ -534,6 +627,7 @@ viewport.addEventListener('pointermove', (e) => {
 
   switch (drag.mode) {
     case 'annotate':
+    case 'marquee':
       drag.curP = p;
       requestRender();
       break;
@@ -542,12 +636,23 @@ viewport.addEventListener('pointermove', (e) => {
       view.y = drag.vy + (sy - drag.startY) / view.zoom;
       requestRender();
       break;
-    case 'move':
-      drag.layer.x = Math.round(p.x - drag.offX);
-      drag.layer.y = Math.round(p.y - drag.offY);
+    case 'move': {
+      let nx = Math.round(p.x - drag.offX);
+      let ny = Math.round(p.y - drag.offY);
+      drag.snapLineX = drag.snapLineY = null;
+      if (!e.altKey && drag.snaps) {
+        const tol = 8 / view.zoom; // ~8 screen px
+        const sX = snapEdge(nx, [0], drag.snaps.xs, tol);
+        const sY = snapEdge(ny, [0], drag.snaps.ys, tol);
+        if (sX) { nx = Math.round(sX.v); drag.snapLineX = sX.line; }
+        if (sY) { ny = Math.round(sY.v); drag.snapLineY = sY.line; }
+      }
+      drag.layer.x = nx;
+      drag.layer.y = ny;
       syncInspector();
       markDirty();
       break;
+    }
     case 'move-multi': {
       const dx = Math.round(p.x - drag.startP.x);
       const dy = Math.round(p.y - drag.startP.y);
@@ -565,8 +670,17 @@ viewport.addEventListener('pointermove', (e) => {
     }
     case 'move-region': {
       const l = drag.layer;
-      const nx = Math.round(p.x - drag.offX);
-      const ny = Math.round(p.y - drag.offY);
+      let nx = Math.round(p.x - drag.offX);
+      let ny = Math.round(p.y - drag.offY);
+      drag.snapLineX = drag.snapLineY = null;
+      if (!e.altKey && drag.snaps) {
+        const tol = 8 / view.zoom;
+        // region rects snap by left edge, center, or right edge
+        const sX = snapEdge(nx, [0, l.rw / 2, l.rw], drag.snaps.xs, tol);
+        const sY = snapEdge(ny, [0, l.rh / 2, l.rh], drag.snaps.ys, tol);
+        if (sX) { nx = Math.round(sX.v); drag.snapLineX = sX.line; }
+        if (sY) { ny = Math.round(sY.v); drag.snapLineY = sY.line; }
+      }
       l.x += nx - l.rx; l.y += ny - l.ry; // texture rides along with its region
       l.rx = nx; l.ry = ny;
       markDirty();
@@ -604,20 +718,119 @@ viewport.addEventListener('pointermove', (e) => {
 
 window.addEventListener('pointerup', () => {
   if (drag && drag.mode === 'annotate') finishAnnotate(drag);
+  if (drag && drag.mode === 'marquee') finishMarquee(drag);
   drag = null;
+  if (dragPaintCache) {
+    // slabs are stale the moment the drag ends — force one clean full render
+    dragPaintCache = null;
+    compositeCache = null;
+    requestRender();
+  }
   viewport.classList.remove('panning');
 });
+
+// select every unlocked visible layer whose bounds intersect the marquee rect
+function finishMarquee(d) {
+  const x1 = Math.min(d.startP.x, d.curP.x), y1 = Math.min(d.startP.y, d.curP.y);
+  const x2 = Math.max(d.startP.x, d.curP.x), y2 = Math.max(d.startP.y, d.curP.y);
+  if (x2 - x1 < 3 && y2 - y1 < 3) { requestRender(); return; } // stray shift-click
+  const picked = doc.layers.filter(l => {
+    if (!l.visible || l.locked) return false;
+    const cs = layerCorners(l);
+    const bx1 = Math.min(...cs.map(c => c.x)), bx2 = Math.max(...cs.map(c => c.x));
+    const by1 = Math.min(...cs.map(c => c.y)), by2 = Math.max(...cs.map(c => c.y));
+    return bx1 < x2 && bx2 > x1 && by1 < y2 && by2 > y1;
+  });
+  selectedIds.clear();
+  for (const l of picked) selectedIds.add(l.id);
+  selectedId = picked.length ? picked[picked.length - 1].id : null;
+  rebuildLayerList();
+  syncInspector();
+  requestRender();
+  if (picked.length) status(`${picked.length} layer${picked.length === 1 ? '' : 's'} selected.`);
+}
 
 viewport.addEventListener('wheel', (e) => {
   e.preventDefault();
   const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
   setZoom(view.zoom * factor, e.offsetX, e.offsetY);
-  $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%';
 }, { passive: false });
 
 viewport.addEventListener('contextmenu', (e) => e.preventDefault());
 
 let spaceHeld = false;
+
+// ---------- ask dialog (prompt() replacement) ----------
+// Small in-app form: askDialog({ title, fields, okLabel }) resolves with
+// { key: value } or null on cancel. fields: { key, label, value?,
+// placeholder?, type?: 'select', options?: [{ value, label }] }.
+
+const askModal = $('ask-modal');
+let askResolve = null;
+
+function closeAsk(result) {
+  askModal.hidden = true;
+  const r = askResolve;
+  askResolve = null;
+  if (r) r(result);
+}
+
+function askDialog({ title, fields, okLabel = 'OK' }) {
+  return new Promise((resolve) => {
+    if (askResolve) closeAsk(null); // a second dialog cancels the first
+    askResolve = resolve;
+    $('ask-title').textContent = title;
+    $('ask-ok').textContent = okLabel;
+    const wrap = $('ask-fields');
+    wrap.innerHTML = '';
+    for (const f of fields) {
+      const row = document.createElement('label');
+      row.className = 'ask-row';
+      const span = document.createElement('span');
+      span.textContent = f.label;
+      row.appendChild(span);
+      let input;
+      if (f.type === 'select') {
+        input = document.createElement('select');
+        input.className = 'tune-select';
+        for (const o of f.options || []) {
+          const opt = document.createElement('option');
+          opt.value = o.value;
+          opt.textContent = o.label;
+          input.appendChild(opt);
+        }
+        if (f.value != null) input.value = f.value;
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'ins-name';
+        input.spellcheck = false;
+        if (f.value != null) input.value = f.value;
+        if (f.placeholder) input.placeholder = f.placeholder;
+      }
+      input.dataset.key = f.key;
+      row.appendChild(input);
+      wrap.appendChild(row);
+    }
+    askModal.hidden = false;
+    const first = wrap.querySelector('input, select');
+    if (first) { first.focus(); if (first.select) first.select(); }
+  });
+}
+
+function askSubmit() {
+  const out = {};
+  for (const el of $('ask-fields').querySelectorAll('[data-key]')) out[el.dataset.key] = el.value;
+  closeAsk(out);
+}
+
+$('ask-ok').addEventListener('click', askSubmit);
+$('ask-cancel').addEventListener('click', () => closeAsk(null));
+askModal.addEventListener('click', (e) => { if (e.target === askModal) closeAsk(null); });
+askModal.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); askSubmit(); }
+  if (e.key === 'Escape') { e.stopPropagation(); closeAsk(null); }
+});
 
 // ---------- drag & drop images ----------
 
@@ -849,6 +1062,7 @@ function syncInspector() {
     $('ins-opacity').value = Math.round(sel.opacity * 100);
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
     $('ins-spec-only').checked = !!sel.specOnly;
+    $('ins-blend').value = BLEND_MODES[sel.blend] ? sel.blend : 'normal';
     // fill layers: color/shape/gradient pickers instead of image transforms
     $('ins-fill-row').hidden = sel.type !== 'fill';
     $('ins-fill-shape-row').hidden = sel.type !== 'fill';
@@ -1068,6 +1282,11 @@ $('ins-spec-only').addEventListener('change', () => {
   sel.specOnly = $('ins-spec-only').checked;
   markDirty();
 });
+$('ins-blend').addEventListener('change', () => {
+  const sel = selectedLayer(); if (!sel) return;
+  sel.blend = $('ins-blend').value;
+  markDirty();
+});
 $('ins-flip-h').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipH = !s.flipH; markDirty(); } });
 $('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipV = !s.flipV; markDirty(); } });
 
@@ -1089,6 +1308,10 @@ $('ins-mirror').addEventListener('click', () => {
     locked: false,
     matParams: sel.matParams ? { ...sel.matParams } : null,
     flipH: !sel.flipH,
+    // a true mirror image reflects the whole transform, not just the raster
+    rotation: -(sel.rotation || 0),
+    skewX: -(sel.skewX || 0),
+    skewY: -(sel.skewY || 0),
   };
   if (isRegionLayer(sel)) {
     // mirror both corners of the region rect, then normalize
@@ -1381,31 +1604,38 @@ function setAnnotateMode(on) {
 }
 $('btn-annotate').addEventListener('click', () => setAnnotateMode(!annotateMode));
 
-// drag released in annotate mode → prompt for name + mirror partner and
-// append the region to the doc's map (creating one first if needed)
-function finishAnnotate(d) {
+// drag released in annotate mode → one small form (name + mirror partner,
+// plus car name for a brand-new map) and the region joins the doc's map
+async function finishAnnotate(d) {
   const cl = (v) => Math.max(0, Math.min(SIZE, v));
   const x1 = cl(Math.min(d.startP.x, d.curP.x)), y1 = cl(Math.min(d.startP.y, d.curP.y));
   const x2 = cl(Math.max(d.startP.x, d.curP.x)), y2 = cl(Math.max(d.startP.y, d.curP.y));
   const w = Math.round(x2 - x1), h = Math.round(y2 - y1);
   if (w < 24 || h < 24) { requestRender(); status('Region too small — drag a rectangle at least 24px on each side.', 'err'); return; }
+  const fields = [];
   if (!doc.regionMap) {
-    const car = prompt('Car name for this region map (e.g. "Mazda MX-5 Cup"):', '');
-    if (car === null) { requestRender(); return; }
-    doc.regionMap = createRegionMap(car.trim());
+    fields.push({ key: 'car', label: 'Car name', placeholder: 'e.g. Mazda MX-5 Cup' });
+  }
+  fields.push({ key: 'name', label: 'Region name', placeholder: 'e.g. Hood, Left Door' });
+  fields.push({
+    key: 'mirror', label: 'Mirrors', type: 'select',
+    options: [
+      { value: '', label: '(no mirror partner)' },
+      ...(doc.regionMap ? doc.regionMap.regions.map(r => ({ value: r.id, label: r.name })) : []),
+    ],
+  });
+  const ans = await askDialog({ title: 'New region', fields, okLabel: 'Add region' });
+  if (!ans || !ans.name || !ans.name.trim()) { requestRender(); return; }
+  if (!doc.regionMap) {
+    if (!ans.car || !ans.car.trim()) { requestRender(); status('A car name is needed to start a region map.', 'err'); return; }
+    doc.regionMap = createRegionMap(ans.car.trim());
   }
   const map = doc.regionMap;
-  const name = prompt('Region name (e.g. "Hood", "Left Door"):');
-  if (name === null || !name.trim()) { requestRender(); return; }
-  const region = { id: uniqueRegionId(name.trim(), map), name: name.trim(), x: Math.round(x1), y: Math.round(y1), w, h };
-  const ids = map.regions.map(r => r.id);
-  const partner = prompt(
-    'Mirror partner id (blank = none).' + (ids.length ? `\nExisting regions: ${ids.join(', ')}` : ''), '');
+  const region = { id: uniqueRegionId(ans.name.trim(), map), name: ans.name.trim(), x: Math.round(x1), y: Math.round(y1), w, h };
   let mirrorNote = '';
-  if (partner && partner.trim()) {
-    const other = regionById(map, partner.trim());
+  if (ans.mirror) {
+    const other = regionById(map, ans.mirror);
     if (other) { region.mirror = other.id; other.mirror = region.id; mirrorNote = ` ⇄ ${other.id}`; }
-    else mirrorNote = ` (no region "${partner.trim()}" — added without a mirror)`;
   }
   map.regions.push(region);
   syncRegionUI();
@@ -1668,8 +1898,8 @@ window.addEventListener('keydown', (e) => {
 });
 
 $('btn-fit').addEventListener('click', fitView);
-$('btn-zoom-in').addEventListener('click', () => { setZoom(view.zoom * 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2); $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%'; });
-$('btn-zoom-out').addEventListener('click', () => { setZoom(view.zoom / 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2); $('zoom-readout').textContent = Math.round(view.zoom * 100) + '%'; });
+$('btn-zoom-in').addEventListener('click', () => setZoom(view.zoom * 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2));
+$('btn-zoom-out').addEventListener('click', () => setZoom(view.zoom / 1.25, viewport.clientWidth / 2, viewport.clientHeight / 2));
 $('btn-spec-view').addEventListener('click', () => {
   specView = !specView;
   if (specView && shineView) setShineView(false);
@@ -1901,8 +2131,13 @@ async function refreshProjectList() {
     ren.className = 'sm-btn';
     ren.textContent = 'Rename';
     ren.addEventListener('click', async () => {
-      const name = prompt('Rename project:', p.name);
-      if (name === null || !name.trim()) return;
+      const ans = await askDialog({
+        title: 'Rename project',
+        fields: [{ key: 'name', label: 'Project name', value: p.name }],
+        okLabel: 'Rename',
+      });
+      const name = ans?.name;
+      if (!name || !name.trim()) return;
       await persist.renameProject(p.id, name.trim()).catch(() => {});
       if (p.id === currentProjectId) {
         doc.name = name.trim();
@@ -1935,7 +2170,8 @@ async function openProject(p) {
       && !confirm('Open this project? Your current unsaved livery is kept only in autosave, which now follows the opened project.')) return;
   flushAutosave(); // last settled edits of the outgoing doc land in its own project
   try {
-    const data = await persist.loadProject(p.id);
+    let data = await persist.loadProject(p.id);
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = null; } }
     if (!data) {
       status('Project data is missing — removing it from the list.', 'err');
       await persist.deleteProject(p.id).catch(() => {});
@@ -1963,13 +2199,18 @@ projectsModal.addEventListener('click', (e) => {
 });
 
 $('btn-save-as-project').addEventListener('click', async () => {
-  const name = prompt('Project name:', doc.name || 'untitled livery');
-  if (name === null || !name.trim()) return;
+  const ans = await askDialog({
+    title: 'Save as project',
+    fields: [{ key: 'name', label: 'Project name', value: doc.name || 'untitled livery' }],
+    okLabel: 'Save',
+  });
+  const name = ans?.name;
+  if (!name || !name.trim()) return;
   doc.name = name.trim();
   $('project-name').value = doc.name;
   const id = Date.now().toString(36);
   try {
-    await persist.saveProject(id, { name: doc.name, thumb: projectThumb() }, serializeDoc(doc));
+    await persist.saveProject(id, { name: doc.name, thumb: projectThumb() }, JSON.stringify(serializeDoc(doc)));
     setCurrentProject(id, doc.name);
     refreshProjectList();
     status(`Saved as project "${doc.name}" — it autosaves while open.`, 'ok');
@@ -1985,21 +2226,30 @@ $('btn-new-project').addEventListener('click', () => {
 
 // ---------- autosave ----------
 
+// last write, so unchanged docs skip the IndexedDB roundtrip entirely
+let lastSaved = { json: null, project: undefined };
+
 async function runAutosave() {
   autosaveTimer = null;
-  captureHistory();
-  // snapshot doc + project binding synchronously — flushAutosave can run
-  // right before a project switch swaps both out from under the awaits
+  // serialize once: the JSON string is what gets persisted (loadAutosave /
+  // loadProject parse it back); the object is handed to captureHistory,
+  // which interns/mutates it — so stringify BEFORE capturing
   const data = serializeDoc(doc);
+  const json = JSON.stringify(data);
+  captureHistory(data);
+  // snapshot the project binding synchronously — flushAutosave can run
+  // right before a project switch swaps it out from under the awaits
   const projectId = currentProjectId;
+  if (json === lastSaved.json && projectId === lastSaved.project) return;
   const meta = projectId ? { name: doc.name, thumb: projectThumb() } : null;
   try {
-    await persist.saveAutosave(data);
+    await persist.saveAutosave(json);
     if (projectId) {
-      await persist.saveProject(projectId, meta, data);
+      await persist.saveProject(projectId, meta, json);
       // topbar rename lands in the index on save — keep the label current
       if (projectId === currentProjectId) $('current-project-label').textContent = meta.name;
     }
+    lastSaved = { json, project: projectId };
     $('status-autosave').textContent = 'autosaved ' + new Date().toLocaleTimeString();
   } catch { /* quota or private mode — non-fatal */ }
 }
@@ -2025,7 +2275,8 @@ window.addEventListener('pagehide', flushAutosave);
 // ---------- exports ----------
 
 $('btn-export-png').addEventListener('click', () => {
-  renderPaint(doc).toBlob((blob) => {
+  // helmets ship at 1024 — the PNG matches what the TGA would be
+  exportPaintCanvas(renderPaint(doc)).toBlob((blob) => {
     downloadBlob(blob, safeName() + '.png');
     status('PNG exported.', 'ok');
   }, 'image/png');
@@ -2042,6 +2293,21 @@ $('btn-export-tga').addEventListener('click', () => {
 });
 
 // ---------- File System Access: save into iRacing ----------
+// The user can link either a single car folder (paints/<car>) or the paints
+// root — when the linked folder contains subdirectories, a car dropdown
+// appears and all reads/writes go into the chosen subfolder.
+
+async function effectivePaintsDir({ requestIfNeeded = false } = {}) {
+  const root = await persist.getPaintsFolder({ requestIfNeeded }).catch(() => null);
+  if (!root) return null;
+  const car = await persist.loadSetting('paintsCar').catch(() => null);
+  if (!car) return root;
+  try {
+    return await root.getDirectoryHandle(car);
+  } catch {
+    return root; // subfolder deleted or permission pending — fall back to root
+  }
+}
 
 async function refreshFsStatus() {
   if (!persist.fsSupported()) {
@@ -2051,28 +2317,58 @@ async function refreshFsStatus() {
     $('btn-link-folder').title = why;
     $('btn-save-iracing').disabled = true;
     $('btn-save-iracing').title = why;
+    $('paints-car').hidden = true;
     return;
   }
-  const handle = await persist.getPaintsFolder().catch(() => null);
-  if (handle) {
-    $('status-fs').textContent = '📁 ' + handle.name;
+  const root = await persist.getPaintsFolder().catch(() => null);
+  const carSel = $('paints-car');
+  if (root) {
+    const subdirs = await persist.listSubdirs(root);
+    const savedCar = await persist.loadSetting('paintsCar').catch(() => null);
+    carSel.hidden = !subdirs.length; // a car folder linked directly has none
+    if (subdirs.length) {
+      carSel.innerHTML = '';
+      const optRoot = document.createElement('option');
+      optRoot.value = '';
+      optRoot.textContent = '(' + root.name + ')';
+      carSel.appendChild(optRoot);
+      for (const name of subdirs.filter(n => n !== 'clearcoat-backup')) {
+        const o = document.createElement('option');
+        o.value = name;
+        o.textContent = name;
+        carSel.appendChild(o);
+      }
+      carSel.value = (savedCar && subdirs.includes(savedCar)) ? savedCar : '';
+    }
+    const car = (!carSel.hidden && carSel.value) ? carSel.value : null;
+    $('status-fs').textContent = '📁 ' + root.name + (car ? ' / ' + car : '');
     $('btn-save-iracing').disabled = false;
     $('btn-get-mips').disabled = false;
-    refreshRestoreButton(handle, $('custid').value.trim()).catch(() => {});
+    const eff = await effectivePaintsDir();
+    if (eff) refreshRestoreButton(eff, $('custid').value.trim()).catch(() => {});
   } else {
     $('status-fs').textContent = 'no folder linked';
     $('btn-save-iracing').disabled = true;
     $('btn-get-mips').disabled = true;
     $('btn-restore-original').hidden = true;
+    carSel.hidden = true;
   }
 }
 
 $('btn-link-folder').addEventListener('click', async () => {
   try {
     const handle = await persist.pickPaintsFolder();
+    await persist.saveSetting('paintsCar', null).catch(() => {}); // new root — no car chosen yet
     status(`Linked folder "${handle.name}". Save to iRacing is live.`, 'ok');
   } catch { /* user cancelled */ }
   refreshFsStatus();
+});
+
+$('paints-car').addEventListener('change', async () => {
+  const car = $('paints-car').value || null;
+  await persist.saveSetting('paintsCar', car).catch(() => {});
+  await refreshFsStatus();
+  status(car ? `Saving into ${car}/.` : 'Saving into the linked folder itself.');
 });
 
 // [paintName, specName] for the active target. Custom Number paints use the
@@ -2080,8 +2376,7 @@ $('btn-link-folder').addEventListener('click', async () => {
 function paintFilenames(custid) {
   if (doc.target === 'helmet') return [`helmet_${custid}.tga`, null];
   if (doc.target === 'suit') return [`suit_${custid}.tga`, null];
-  const num = $('custom-number').checked;
-  return [`car_${num ? 'num_' : ''}${custid}.tga`, `car_spec_${custid}.tga`];
+  return [`car_${doc.customNumber ? 'num_' : ''}${custid}.tga`, `car_spec_${custid}.tga`];
 }
 
 // iRacing helmets are 1024×1024 — downscale the 2048 sheet for that target;
@@ -2142,7 +2437,7 @@ async function saveToiRacing({ quiet = false } = {}) {
   const custid = quiet ? $('custid').value.trim() : validCustid();
   if (!custid || !/^\d+$/.test(custid)) return false;
   try {
-    const handle = await persist.getPaintsFolder({ requestIfNeeded: !quiet });
+    const handle = await effectivePaintsDir({ requestIfNeeded: !quiet });
     if (!handle) {
       if (!quiet) { status('Folder permission lost — click Link Folder again.', 'err'); refreshFsStatus(); }
       return false;
@@ -2176,6 +2471,7 @@ $('btn-save-iracing').addEventListener('click', () => saveToiRacing());
 
 let liveSyncTimer = null;
 let liveSyncBusy = false;
+let liveSyncWarned = false; // surface a quiet-save failure once, not per tick
 
 function liveSyncTick() {
   if (!$('live-sync').checked) return;
@@ -2183,7 +2479,16 @@ function liveSyncTick() {
   liveSyncTimer = setTimeout(async () => {
     if (liveSyncBusy) { liveSyncTick(); return; }
     liveSyncBusy = true;
-    try { await saveToiRacing({ quiet: true }); } finally { liveSyncBusy = false; }
+    try {
+      const ok = await saveToiRacing({ quiet: true });
+      if (!ok && !liveSyncWarned) {
+        liveSyncWarned = true;
+        $('status-fs').textContent = 'live sync paused';
+        status('Live Sync paused — folder permission needed. Click Save to iRacing once to re-grant.', 'err');
+      } else if (ok) {
+        liveSyncWarned = false;
+      }
+    } finally { liveSyncBusy = false; }
   }, 2500);
 }
 
@@ -2204,7 +2509,7 @@ $('btn-restore-original').addEventListener('click', async () => {
   const custid = validCustid();
   if (!custid) return;
   try {
-    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
+    const handle = await effectivePaintsDir({ requestIfNeeded: true });
     if (!handle) { status('Folder permission lost — click Link Folder again.', 'err'); return; }
     const bdir = await persist.getBackupDir(handle, false);
     let restored = 0;
@@ -2237,8 +2542,12 @@ async function addTgaAsLayer(arrayBuffer, name) {
   markDirty();
 }
 
+// Custom Number lives in the doc (it decides the export filename, so it
+// belongs to the project, like target does)
 $('custom-number').addEventListener('change', () => {
-  persist.saveSetting('customNumber', $('custom-number').checked).catch(() => {});
+  doc.customNumber = $('custom-number').checked;
+  scheduleAutosave();
+  refreshFsStatus(); // restore button depends on the filenames
 });
 
 // ---------- paint target (car / helmet / suit) ----------
@@ -2246,6 +2555,7 @@ $('custom-number').addEventListener('change', () => {
 // the Custom Number checkbox only applies to car paints
 function syncPaintTarget() {
   $('paint-target').value = doc.target;
+  $('custom-number').checked = !!doc.customNumber;
   const isCar = doc.target === 'car';
   $('custom-number').disabled = !isCar;
   $('custom-number').closest('.tb-check').classList.toggle('disabled', !isCar);
@@ -2267,7 +2577,7 @@ $('btn-get-mips').addEventListener('click', async () => {
   const custid = validCustid();
   if (!custid) return;
   try {
-    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
+    const handle = await effectivePaintsDir({ requestIfNeeded: true });
     if (!handle) { status('Link your paints folder first.', 'err'); return; }
     const mips = (await persist.listFolder(handle))
       .filter(n => /\.mip$/i.test(n) && n.includes(custid));
@@ -2294,7 +2604,7 @@ $('btn-import-paint').addEventListener('click', async () => {
   const custid = validCustid();
   if (!custid) return;
   try {
-    const handle = await persist.getPaintsFolder({ requestIfNeeded: true });
+    const handle = await effectivePaintsDir({ requestIfNeeded: true });
     if (!handle) { status('Link your paints folder first.', 'err'); return; }
     const bdir = await persist.getBackupDir(handle, false);
 
@@ -2351,9 +2661,18 @@ $('file-tga').addEventListener('change', async (e) => {
 
 // ---------- keyboard ----------
 
+// document shortcuts must not fire behind an open dialog (worst case:
+// Delete removing layers behind the Projects modal). Esc still passes
+// through — the Escape branch below is what closes them.
+function anyModalOpen() {
+  return ['help-modal', 'projects-modal', 'maps-modal', 'library-modal', 'advisor-modal', 'ask-modal']
+    .some(id => { const el = document.getElementById(id); return el && !el.hidden; });
+}
+
 window.addEventListener('keydown', (e) => {
   const tag = document.activeElement?.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (anyModalOpen() && e.key !== 'Escape' && e.key !== 'F1') return;
 
   if (e.code === 'Space') { spaceHeld = true; e.preventDefault(); return; }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
@@ -2364,6 +2683,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
   if (e.key === 'Escape') {
+    if (!askModal.hidden) { closeAsk(null); return; }
     if (!$('help-modal').hidden) { $('help-modal').hidden = true; return; }
     if (!projectsModal.hidden) { closeProjects(); return; }
     if (!mapsModal.hidden) { closeMapsModal(); return; }
@@ -2418,15 +2738,18 @@ window.addEventListener('resize', requestRender);
 
   const savedCustid = await persist.loadSetting('custid').catch(() => null);
   if (savedCustid) $('custid').value = savedCustid;
-  const customNum = await persist.loadSetting('customNumber').catch(() => null);
-  if (customNum) $('custom-number').checked = true;
+  // pre-v0.31 stored Custom Number as a global setting; it now lives in the doc
+  const legacyCustomNum = await persist.loadSetting('customNumber').catch(() => null);
   const liveSync = await persist.loadSetting('liveSync').catch(() => null);
   if (liveSync && persist.fsSupported()) $('live-sync').checked = true;
 
-  const auto = await persist.loadAutosave().catch(() => null);
+  let auto = await persist.loadAutosave().catch(() => null);
+  if (typeof auto === 'string') { try { auto = JSON.parse(auto); } catch { auto = null; } }
   if (auto && (auto.layers?.length || auto.template || auto.baseColor !== '#1a6cff')) {
     try {
       doc = await deserializeDoc(auto);
+      // migrate the legacy global Custom Number into a doc that predates the field
+      if (legacyCustomNum && !('customNumber' in auto)) doc.customNumber = true;
       status('Restored autosaved project.');
     } catch { /* corrupt autosave — start fresh */ }
   }

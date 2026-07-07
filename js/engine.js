@@ -123,6 +123,7 @@ export function createDoc() {
   return {
     name: 'untitled livery',
     target: 'car',       // what this project paints: 'car' | 'helmet' | 'suit'
+    customNumber: false, // iRacing Custom Number paints export car_num_<id>.tga
     baseColor: '#1a6cff',
     baseMaterial: 'gloss',
     baseMatParams: null,
@@ -353,6 +354,17 @@ export function fillPaintStyle(ctx, layer, rx, ry, rw, rh) {
 
 export const isRegionLayer = (l) => l.type === 'pattern' || l.type === 'fill';
 
+// Paint blend modes — separable modes only: on a transparent backdrop they
+// degrade to plain source-over, so the spec-map silhouette pass (which draws
+// each layer onto an empty scratch canvas) is unaffected by a layer's blend.
+export const BLEND_MODES = {
+  normal: { label: 'Normal', op: 'source-over' },
+  multiply: { label: 'Multiply', op: 'multiply' },
+  screen: { label: 'Screen', op: 'screen' },
+  overlay: { label: 'Overlay', op: 'overlay' },
+  'soft-light': { label: 'Soft light', op: 'soft-light' },
+};
+
 // ---------- compositing ----------
 
 const paintCanvas = document.createElement('canvas');
@@ -365,6 +377,7 @@ scratch.width = scratch.height = SIZE;
 function drawLayer(ctx, layer) {
   ctx.save();
   ctx.globalAlpha = layer.opacity;
+  ctx.globalCompositeOperation = (BLEND_MODES[layer.blend] || BLEND_MODES.normal).op;
   if (layer.type === 'fill') {
     const rx = layer.rx ?? 0, ry = layer.ry ?? 0, rw = layer.rw ?? SIZE, rh = layer.rh ?? SIZE;
     ctx.fillStyle = fillPaintStyle(ctx, layer, rx, ry, rw, rh);
@@ -414,21 +427,84 @@ function applyTint(ctx, layer) {
   ctx.restore();
 }
 
-export function renderPaint(doc) {
-  const ctx = paintCanvas.getContext('2d');
-  ctx.clearRect(0, 0, SIZE, SIZE);
+// ghost material and "material only" layers exist solely in the spec map
+function inPaintMap(layer) {
+  return layer.visible && !(MATERIALS[layer.material] || {}).ghost && !layer.specOnly;
+}
+
+function paintBase(ctx, doc) {
   const bp = doc.baseMatParams;
   ctx.fillStyle = (bp?.tintAmt && bp.tint)
     ? mixHex(doc.baseColor, bp.tint, bp.tintAmt / 100)
     : doc.baseColor;
   ctx.fillRect(0, 0, SIZE, SIZE);
+}
+
+function paintLayerInto(ctx, layer) {
+  drawLayer(ctx, layer);
+  applyTint(ctx, layer);
+}
+
+export function renderPaint(doc) {
+  const ctx = paintCanvas.getContext('2d');
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  paintBase(ctx, doc);
   for (const layer of doc.layers) {
-    if (!layer.visible) continue;
-    // ghost material and "material only" layers exist solely in the spec map
-    if ((MATERIALS[layer.material] || {}).ghost || layer.specOnly) continue;
-    drawLayer(ctx, layer);
-    applyTint(ctx, layer);
+    if (inPaintMap(layer)) paintLayerInto(ctx, layer);
   }
+  return paintCanvas;
+}
+
+// ---------- drag composite cache ----------
+// While layers are being dragged, everything beneath and above them is
+// static. buildDragCache pre-renders those two slabs once; renderPaintWithDrag
+// then draws slab → moving layers → slab per frame instead of recompositing
+// the whole stack. Returns null (caller falls back to renderPaint) when the
+// moving layers aren't a contiguous run of the paint-visible stack, or when a
+// layer above them uses a blend mode — a blended layer baked against a
+// transparent backdrop wouldn't composite the same as against real paint.
+
+const dragBelow = document.createElement('canvas');
+dragBelow.width = dragBelow.height = SIZE;
+const dragAbove = document.createElement('canvas');
+dragAbove.width = dragAbove.height = SIZE;
+
+export function buildDragCache(doc, movingIds) {
+  const idxs = [];
+  doc.layers.forEach((l, i) => { if (movingIds.has(l.id)) idxs.push(i); });
+  if (!idxs.length) return null;
+  const lo = idxs[0], hi = idxs[idxs.length - 1];
+  for (let i = lo; i <= hi; i++) {
+    const l = doc.layers[i];
+    if (!movingIds.has(l.id) && inPaintMap(l)) return null; // static layer interleaved
+  }
+  for (let i = hi + 1; i < doc.layers.length; i++) {
+    const l = doc.layers[i];
+    if (inPaintMap(l) && l.blend && l.blend !== 'normal') return null;
+  }
+
+  const bctx = dragBelow.getContext('2d');
+  bctx.clearRect(0, 0, SIZE, SIZE);
+  paintBase(bctx, doc);
+  for (let i = 0; i < lo; i++) {
+    if (inPaintMap(doc.layers[i])) paintLayerInto(bctx, doc.layers[i]);
+  }
+  const actx = dragAbove.getContext('2d');
+  actx.clearRect(0, 0, SIZE, SIZE);
+  for (let i = hi + 1; i < doc.layers.length; i++) {
+    if (inPaintMap(doc.layers[i])) paintLayerInto(actx, doc.layers[i]);
+  }
+  return { movingIds };
+}
+
+export function renderPaintWithDrag(doc, cache) {
+  const ctx = paintCanvas.getContext('2d');
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  ctx.drawImage(dragBelow, 0, 0);
+  for (const layer of doc.layers) {
+    if (cache.movingIds.has(layer.id) && inPaintMap(layer)) paintLayerInto(ctx, layer);
+  }
+  ctx.drawImage(dragAbove, 0, 0);
   return paintCanvas;
 }
 
@@ -478,16 +554,19 @@ export function renderSpec(doc) {
 
 // Converts the template image into a recolored line overlay: "ink" (distance
 // from white) becomes alpha, painted in the chosen color, optionally
-// thickened. Cached — recomputed only when template/color/bold change.
-let tplCache = { key: null, canvas: null };
+// thickened. Cached — keyed on the template object's identity (a new load
+// always creates a new object) plus the style settings.
+let tplCache = { tpl: null, color: null, bold: null, canvas: null };
 
 export function templateOverlay(doc) {
   if (!doc.template) return null;
   if (doc.templateColor === 'original') {
     return { img: doc.template.img, multiply: true };
   }
-  const key = `${doc.template.src.length}:${doc.templateColor}:${doc.templateBold}`;
-  if (tplCache.key === key) return { img: tplCache.canvas, multiply: false };
+  if (tplCache.tpl === doc.template && tplCache.color === doc.templateColor
+      && tplCache.bold === doc.templateBold) {
+    return { img: tplCache.canvas, multiply: false };
+  }
 
   const img = doc.template.img;
   const w = img.width, h = img.height;
@@ -518,11 +597,50 @@ export function templateOverlay(doc) {
     : [[0, 0]];
   for (const [dx, dy] of offsets) octx.drawImage(work, dx, dy);
 
-  tplCache = { key, canvas: out };
+  tplCache = { tpl: doc.template, color: doc.templateColor, bold: doc.templateBold, canvas: out };
   return { img: out, multiply: false };
 }
 
 // ---------- hit testing ----------
+
+// Downsampled per-layer alpha map for hit testing — cached on the layer and
+// invalidated by img reference, so re-rasterized text layers refresh
+// automatically. Never serialized (serializeDoc whitelists fields).
+const HIT_MAX = 256;
+
+function layerHitData(l) {
+  if (l._hit && l._hit.img === l.img) return l._hit;
+  try {
+    const s = Math.min(1, HIT_MAX / Math.max(l.img.width, l.img.height));
+    const w = Math.max(1, Math.round(l.img.width * s));
+    const h = Math.max(1, Math.round(l.img.height * s));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const cctx = c.getContext('2d', { willReadFrequently: true });
+    cctx.drawImage(l.img, 0, 0, w, h);
+    l._hit = { img: l.img, w, h, data: cctx.getImageData(0, 0, w, h).data };
+  } catch {
+    l._hit = { img: l.img, w: 0, h: 0, data: null }; // unreadable — treat as opaque
+  }
+  return l._hit;
+}
+
+// true when the layer has visible pixels at (or one sample around) a point in
+// layer-local coords — so clicking a PNG's transparent corner falls through
+function layerOpaqueAt(l, lx, ly) {
+  const hd = layerHitData(l);
+  if (!hd.data) return true;
+  const px = Math.round((lx + l.img.width / 2) * (hd.w / l.img.width));
+  const py = Math.round((ly + l.img.height / 2) * (hd.h / l.img.height));
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const x = px + dx, y = py + dy;
+      if (x < 0 || y < 0 || x >= hd.w || y >= hd.h) continue;
+      if (hd.data[(y * hd.w + x) * 4 + 3] > 12) return true;
+    }
+  }
+  return false;
+}
 
 // all layers under a doc-space point, in selection-priority order: image
 // layers top-down first (so region fills never block logo dragging), then
@@ -533,7 +651,8 @@ export function hitTestAll(doc, px, py) {
     const l = doc.layers[i];
     if (!l.visible || l.locked || isRegionLayer(l)) continue;
     const local = toLocal(l, px, py);
-    if (Math.abs(local.x) <= l.img.width / 2 && Math.abs(local.y) <= l.img.height / 2) {
+    if (Math.abs(local.x) <= l.img.width / 2 && Math.abs(local.y) <= l.img.height / 2
+        && layerOpaqueAt(l, local.x, local.y)) {
       hits.push(l);
     }
   }
@@ -576,6 +695,7 @@ export function serializeDoc(doc) {
     format: 'clearcoat/1',
     name: doc.name,
     target: doc.target,
+    customNumber: !!doc.customNumber,
     baseColor: doc.baseColor,
     baseMaterial: doc.baseMaterial,
     baseMatParams: doc.baseMatParams || null,
@@ -588,6 +708,7 @@ export function serializeDoc(doc) {
     layers: doc.layers.map(l => ({
       id: l.id, type: l.type, name: l.name,
       visible: l.visible, locked: !!l.locked, opacity: l.opacity, material: l.material,
+      blend: l.blend || 'normal',
       matParams: l.matParams || null,
       specBlend: l.specBlend || 'replace',
       specOnly: !!l.specOnly,
@@ -618,6 +739,7 @@ export async function deserializeDoc(data) {
   const doc = createDoc();
   doc.name = data.name || doc.name;
   doc.target = ['car', 'helmet', 'suit'].includes(data.target) ? data.target : 'car';
+  doc.customNumber = !!data.customNumber;
   doc.baseColor = data.baseColor || doc.baseColor;
   doc.baseMaterial = data.baseMaterial || doc.baseMaterial;
   doc.baseMatParams = data.baseMatParams || null;
@@ -653,6 +775,7 @@ export async function deserializeDoc(data) {
           id: l.id || newId(), name: l.name || 'fill',
           visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1,
           material: l.material || 'gloss',
+          blend: BLEND_MODES[l.blend] ? l.blend : 'normal',
           matParams: l.matParams || null,
           specBlend: l.specBlend || 'replace',
           specOnly: !!l.specOnly,
@@ -669,6 +792,7 @@ export async function deserializeDoc(data) {
           id: l.id || newId(), type: 'text', name: l.name || 'text',
           visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1,
           material: l.material || 'gloss',
+          blend: BLEND_MODES[l.blend] ? l.blend : 'normal',
           matParams: l.matParams || null,
           specBlend: l.specBlend || 'replace',
           img: null, src: l.src || null,
@@ -696,6 +820,7 @@ export async function deserializeDoc(data) {
         name: l.name || 'image',
         visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1,
         material: l.material || 'gloss',
+        blend: BLEND_MODES[l.blend] ? l.blend : 'normal',
         matParams: l.matParams || null,
         specBlend: l.specBlend || 'replace',
         specOnly: !!l.specOnly,

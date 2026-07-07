@@ -724,6 +724,22 @@ input  { font-family: inherit; }
 }
 .projects-panel { max-width: 560px; }
 
+/* ask dialog — small in-app form replacing prompt(); stacked above every
+   other modal so it can open from the projects browser */
+#ask-modal {
+  position: fixed; inset: 0; z-index: 110;
+  background: rgba(10, 11, 14, .72);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.ask-panel { max-width: 380px; }
+#ask-fields { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.ask-row { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ink-dim); }
+.ask-row input, .ask-row select { width: 100%; }
+.ask-actions { justify-content: flex-end; margin-top: 14px; }
+.ask-actions .accent { border-color: var(--orange); color: var(--orange); }
+.ask-actions .accent:hover { background: #221a14; }
+
 /* community region maps browser — same backdrop/panel/list styling */
 #maps-modal {
   position: fixed; inset: 0; z-index: 60;
