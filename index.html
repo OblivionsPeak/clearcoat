@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.31</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.32</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -107,6 +107,7 @@
           <button id="btn-add-fill" class="sm-btn" title="Add a solid-color material patch — a resizable rectangle with its own color, material, and tuning (e.g. a pearl panel)">+ Fill</button>
           <button id="btn-add-text" class="sm-btn" title="Add a text layer — driver name, car number, sponsor wordmark">+ Text</button>
           <button id="btn-add-library" class="sm-btn" title="Insert a ready-made racing graphic — roundels, stripes, flames — then recolor it with the material Tint">+ Library</button>
+          <button id="btn-add-simtex" class="sm-btn" title="Open SimTex Pro in a popup — design a texture there and hit 'Send to Clearcoat' to drop it straight in as a tiling pattern layer">+ SimTex</button>
         </span>
       </h2>
       <p class="hint" style="margin-top:0">Patterns tile a resizable region (default: the whole sheet) — drag its corners to cover just the hood, a stripe, etc. Generate seamless textures with <a href="https://oblivionspeak.github.io/simtex-pro/" target="_blank" rel="noopener">SimTex Pro ↗</a> (use its seamless export), then add them here.</p>
@@ -136,6 +137,8 @@
         <span id="wand-tol-val" class="mono hud-readout" style="min-width:24px">30</span>
         <label class="tb-check" title="Instead of a material-only selection, repaint the selected color with the chosen one"><input type="checkbox" id="wand-recolor"> Recolor</label>
         <input type="color" id="wand-recolor-color" value="#1a6cff" title="Replacement color" style="width:26px;height:22px;border:1px solid var(--seam);border-radius:4px;background:var(--asphalt);padding:2px;cursor:pointer;" hidden>
+        <label class="tb-check" title="Fill the selection with a tiling texture (e.g. a SimTex seamless export) instead of a material-only layer"><input type="checkbox" id="wand-pattern"> Pattern</label>
+        <input id="file-wand-pattern" type="file" accept="image/*" hidden>
       </span>
       <span class="hud-sep"></span>
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
@@ -215,6 +218,12 @@
         <input id="ins-fill-angle" type="number" step="1" min="0" max="360" class="tune-num mono" title="Gradient angle in degrees — 0 = left → right" aria-label="Gradient angle" hidden>
       </div>
 
+      <div class="slider-row" id="ins-fill-mid-row" hidden>
+        <label class="tb-check" title="Add a third color stop in the middle of the gradient"><input type="checkbox" id="ins-fill-mid"> Mid</label>
+        <input id="ins-fill-colormid" type="color" value="#888888" title="Middle gradient color" aria-label="Middle gradient color" hidden>
+        <input id="ins-fill-midpos" type="range" min="5" max="95" value="50" title="Where the middle stop sits along the gradient" aria-label="Middle stop position" hidden>
+      </div>
+
       <div class="slider-row">
         <label for="ins-opacity">Opacity</label>
         <input id="ins-opacity" type="range" min="0" max="100" value="100">
@@ -281,6 +290,34 @@
           <label for="ins-text-outline-w">Outline</label>
           <input id="ins-text-outline-w" type="number" step="1" min="0" max="30" class="tune-num mono">
           <label class="ins-italic"><input type="checkbox" id="ins-text-italic"> Italic</label>
+        </div>
+        <div class="slider-row">
+          <label for="ins-text-curve" title="Bend the text along an arc — positive arches up, negative arches down">Curve</label>
+          <input id="ins-text-curve" type="range" min="-180" max="180" step="5" value="0">
+          <span class="mono" id="ins-text-curve-val">0°</span>
+        </div>
+      </div>
+
+      <div id="ins-fx-section" hidden>
+        <h3 class="sub-title">Effects</h3>
+        <div class="slider-row">
+          <label for="ins-fx-stroke" title="Contour outline drawn around the layer's silhouette — also stamps into the spec map">Outline</label>
+          <input id="ins-fx-stroke" type="range" min="0" max="40" value="0">
+          <input id="ins-fx-stroke-color" type="color" value="#000000" title="Outline color" aria-label="Effect outline color">
+        </div>
+        <div class="slider-row">
+          <label for="ins-fx-shadow" title="Soft drop shadow behind the layer — paint only, never in the spec map">Shadow</label>
+          <input id="ins-fx-shadow" type="range" min="0" max="60" value="0">
+          <input id="ins-fx-shadow-color" type="color" value="#000000" title="Shadow color" aria-label="Shadow color">
+        </div>
+        <div class="xform-grid text-grid" id="ins-fx-shadow-off" hidden>
+          <label>Off X <input id="ins-fx-sdx" type="number" step="1" min="-60" max="60" class="mono"></label>
+          <label>Off Y <input id="ins-fx-sdy" type="number" step="1" min="-60" max="60" class="mono"></label>
+        </div>
+        <div class="slider-row">
+          <label for="ins-fx-glow" title="Soft glow around the layer — paint only, use Screen-ish light colors">Glow</label>
+          <input id="ins-fx-glow" type="range" min="0" max="60" value="0">
+          <input id="ins-fx-glow-color" type="color" value="#ffffff" title="Glow color" aria-label="Glow color">
         </div>
       </div>
 

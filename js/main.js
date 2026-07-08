@@ -1,5 +1,6 @@
 import {
   SIZE, MATERIALS, BLEND_MODES, createDoc, createImageLayer, createPatternLayer, createFillLayer,
+  createMaskedPatternLayer,
   createTextLayer, regenerateText, fillShapePath, fillPaintStyle,
   GOOGLE_FONTS, registerCustomFont,
   renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
@@ -346,6 +347,28 @@ function draw() {
     vctx.restore();
   }
 
+  // group selection: bbox with its own scale/rotate handles
+  const gb = groupBBox();
+  if (gb) {
+    const a = docToScreen(gb.x1, gb.y1);
+    const b = docToScreen(gb.x2, gb.y2);
+    vctx.save();
+    vctx.strokeStyle = '#2dd6c1';
+    vctx.lineWidth = 1.5;
+    vctx.setLineDash([8, 5]);
+    vctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    vctx.setLineDash([]);
+    vctx.fillStyle = '#2dd6c1';
+    for (const [hx, hy] of [[a.x, a.y], [b.x, a.y], [b.x, b.y], [a.x, b.y]]) {
+      vctx.fillRect(hx - HANDLE_PX / 2, hy - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
+    }
+    // rotate handle above the top edge center
+    vctx.beginPath();
+    vctx.arc((a.x + b.x) / 2, a.y - 26, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
+    vctx.fill();
+    vctx.restore();
+  }
+
   // selection box + handles (screen space for crisp lines)
   const sel = selectedLayer();
   if (sel && sel.visible) {
@@ -428,9 +451,10 @@ function startLayerDrag(ids) {
 
 // ---------- snapping ----------
 // While moving, layer centers (and region edges) snap to the sheet edges +
-// center and to region-map lines. Hold Alt to move freely.
+// center, to region-map lines, and to other layers' bounding-box edges and
+// centers. Hold Alt to move freely.
 
-function snapCandidates() {
+function snapCandidates(excludeIds) {
   const xs = new Set([0, SIZE / 2, SIZE]);
   const ys = new Set([0, SIZE / 2, SIZE]);
   if (doc.regionMap) {
@@ -439,7 +463,38 @@ function snapCandidates() {
       ys.add(r.y); ys.add(r.y + r.h / 2); ys.add(r.y + r.h);
     }
   }
+  for (const l of doc.layers) {
+    if (!l.visible || (excludeIds && excludeIds.has(l.id))) continue;
+    const cs = layerCorners(l);
+    const x1 = Math.min(...cs.map(c => c.x)), x2 = Math.max(...cs.map(c => c.x));
+    const y1 = Math.min(...cs.map(c => c.y)), y2 = Math.max(...cs.map(c => c.y));
+    xs.add(Math.round(x1)); xs.add(Math.round((x1 + x2) / 2)); xs.add(Math.round(x2));
+    ys.add(Math.round(y1)); ys.add(Math.round((y1 + y2) / 2)); ys.add(Math.round(y2));
+  }
   return { xs: [...xs], ys: [...ys] };
+}
+
+// ---------- group transforms (multi-select) ----------
+
+// doc-space bounding box over all selected, visible layers
+function groupBBox() {
+  const layers = selectedLayers().filter(l => l.visible);
+  if (layers.length < 2) return null;
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const l of layers) {
+    for (const c of layerCorners(l)) {
+      x1 = Math.min(x1, c.x); y1 = Math.min(y1, c.y);
+      x2 = Math.max(x2, c.x); y2 = Math.max(y2, c.y);
+    }
+  }
+  return { x1, y1, x2, y2, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
+}
+
+function groupTransformStarts() {
+  return selectedLayers().filter(l => !l.locked).map(l => ({
+    layer: l, x: l.x, y: l.y, scale: l.scale, rotation: l.rotation || 0,
+    rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
+  }));
 }
 
 // best candidate line within tol for any of the feature offsets (e.g. a
@@ -456,6 +511,20 @@ function snapEdge(v, spans, cands, tol) {
 }
 
 function handleAt(sx, sy) {
+  // group handles take priority while a multi-selection is active
+  const gb = groupBBox();
+  if (gb) {
+    const a = docToScreen(gb.x1, gb.y1);
+    const b = docToScreen(gb.x2, gb.y2);
+    const rot = { x: (a.x + b.x) / 2, y: a.y - 26 };
+    if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'group-rotate' };
+    const corners = [[a.x, a.y], [b.x, a.y], [b.x, b.y], [a.x, b.y]];
+    for (let i = 0; i < 4; i++) {
+      if (Math.abs(sx - corners[i][0]) <= HANDLE_PX && Math.abs(sy - corners[i][1]) <= HANDLE_PX) {
+        return { type: 'group-scale' };
+      }
+    }
+  }
   const sel = selectedLayer();
   if (!sel || !sel.visible || sel.locked) return null;
   if (!isRegionLayer(sel)) {
@@ -489,6 +558,32 @@ $('wand-tol').addEventListener('input', () => {
 });
 $('wand-recolor').addEventListener('change', () => {
   $('wand-recolor-color').hidden = !$('wand-recolor').checked;
+  if ($('wand-recolor').checked) $('wand-pattern').checked = false; // one action at a time
+});
+
+// wand "Pattern" fill — pick a tiling texture once, then every wand click
+// fills its selection with that texture instead of making a material layer
+let wandPatternImg = null;
+$('wand-pattern').addEventListener('change', () => {
+  if ($('wand-pattern').checked) {
+    $('wand-recolor').checked = false;
+    $('wand-recolor-color').hidden = true;
+    $('file-wand-pattern').click();
+  } else {
+    wandPatternImg = null;
+  }
+});
+$('file-wand-pattern').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) { $('wand-pattern').checked = false; return; }
+  try {
+    wandPatternImg = await loadImage(await fileToDataURL(file));
+    status('Pattern armed — wand clicks now fill their selection with the texture.', 'ok');
+  } catch {
+    $('wand-pattern').checked = false;
+    status('Could not load that image.', 'err');
+  }
 });
 
 function wandClick(p, global) {
@@ -500,6 +595,20 @@ function wandClick(p, global) {
     if (!result) { status('Nothing selected — try a higher tolerance.', 'err'); return; }
     try {
       const recolor = $('wand-recolor').checked;
+      // pattern fill: clip the armed texture to the selection mask
+      if ($('wand-pattern').checked && wandPatternImg && !recolor) {
+        const maskImg = await loadImage(result.src);
+        const mask = document.createElement('canvas');
+        mask.width = mask.height = SIZE;
+        mask.getContext('2d').drawImage(maskImg, 0, 0);
+        const layer = createMaskedPatternLayer(mask, wandPatternImg, 'pattern ' + result.color);
+        doc.layers.push(layer);
+        selectLayer(layer.id);
+        markDirty();
+        const pctP = (result.count / (SIZE * SIZE) * 100).toFixed(1);
+        status(`Filled ${result.color} (${pctP}% of sheet) with the armed texture.`, 'ok');
+        return;
+      }
       const img = await loadImage(result.src);
       const layer = createImageLayer(img, result.src,
         (recolor ? 'recolor ' : global ? 'color ' : 'region ') + result.color);
@@ -552,6 +661,18 @@ viewport.addEventListener('pointerdown', (e) => {
 
   const handle = handleAt(sx, sy);
   const sel = selectedLayer();
+  if (handle && (handle.type === 'group-scale' || handle.type === 'group-rotate')) {
+    const p = screenToDoc(sx, sy);
+    const gb = groupBBox();
+    const starts = groupTransformStarts();
+    if (gb && starts.length) {
+      drag = handle.type === 'group-scale'
+        ? { mode: 'group-scale', cx: gb.cx, cy: gb.cy, starts, startDist: Math.hypot(p.x - gb.cx, p.y - gb.cy) }
+        : { mode: 'group-rotate', cx: gb.cx, cy: gb.cy, starts, startAngle: Math.atan2(p.y - gb.cy, p.x - gb.cx) * 180 / Math.PI };
+      startLayerDrag(new Set(starts.map(s => s.layer.id)));
+    }
+    return;
+  }
   if (handle && sel) {
     const p = screenToDoc(sx, sy);
     if (handle.type === 'rotate') {
@@ -604,8 +725,8 @@ viewport.addEventListener('pointerdown', (e) => {
     }
     selectLayer(hit.id);
     drag = isRegionLayer(hit)
-      ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry, snaps: snapCandidates() }
-      : { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y, snaps: snapCandidates() };
+      ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry, snaps: snapCandidates(new Set([hit.id])) }
+      : { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y, snaps: snapCandidates(new Set([hit.id])) };
     startLayerDrag(new Set([hit.id]));
   } else {
     selectLayer(null);
@@ -709,6 +830,55 @@ viewport.addEventListener('pointermove', (e) => {
       let ang = Math.atan2(p.y - drag.layer.y, p.x - drag.layer.x) * 180 / Math.PI - drag.startAngle;
       if (e.shiftKey) ang = Math.round(ang / 15) * 15;
       drag.layer.rotation = Math.round(ang * 10) / 10;
+      syncInspector();
+      markDirty();
+      break;
+    }
+    case 'group-scale': {
+      const dist = Math.hypot(p.x - drag.cx, p.y - drag.cy);
+      if (drag.startDist < 1) break;
+      const f = Math.max(0.02, dist / drag.startDist);
+      for (const s of drag.starts) {
+        const l = s.layer;
+        if (isRegionLayer(l)) {
+          l.rw = Math.max(32, Math.round(s.rw * f));
+          l.rh = Math.max(32, Math.round(s.rh * f));
+          l.rx = Math.round(drag.cx + (s.rx + s.rw / 2 - drag.cx) * f - l.rw / 2);
+          l.ry = Math.round(drag.cy + (s.ry + s.rh / 2 - drag.cy) * f - l.rh / 2);
+          if (l.type === 'pattern') l.scale = Math.max(0.01, s.scale * f); // tiles ride along
+        } else {
+          l.scale = Math.max(0.01, s.scale * f);
+          l.x = Math.round(drag.cx + (s.x - drag.cx) * f);
+          l.y = Math.round(drag.cy + (s.y - drag.cy) * f);
+        }
+      }
+      syncInspector();
+      markDirty();
+      break;
+    }
+    case 'group-rotate': {
+      let delta = Math.atan2(p.y - drag.cy, p.x - drag.cx) * 180 / Math.PI - drag.startAngle;
+      if (e.shiftKey) delta = Math.round(delta / 15) * 15;
+      const rad = delta * Math.PI / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      const spin = (x, y) => ({
+        x: drag.cx + (x - drag.cx) * cos - (y - drag.cy) * sin,
+        y: drag.cy + (x - drag.cx) * sin + (y - drag.cy) * cos,
+      });
+      for (const s of drag.starts) {
+        const l = s.layer;
+        if (isRegionLayer(l)) {
+          // regions stay axis-aligned: orbit the rect center only
+          const c = spin(s.rx + s.rw / 2, s.ry + s.rh / 2);
+          const nrx = Math.round(c.x - s.rw / 2), nry = Math.round(c.y - s.rh / 2);
+          l.x = s.x + (nrx - s.rx); l.y = s.y + (nry - s.ry); // tile offset rides along
+          l.rx = nrx; l.ry = nry;
+        } else {
+          const c = spin(s.x, s.y);
+          l.x = Math.round(c.x); l.y = Math.round(c.y);
+          l.rotation = Math.round((s.rotation + delta) * 10) / 10;
+        }
+      }
       syncInspector();
       markDirty();
       break;
@@ -1078,6 +1248,17 @@ function syncInspector() {
       $('ins-fill-type').value = ft;
       $('ins-fill-angle').hidden = ft !== 'linear';
       if (document.activeElement !== $('ins-fill-angle')) $('ins-fill-angle').value = sel.gradAngle ?? 0;
+      // three-stop gradient controls
+      $('ins-fill-mid-row').hidden = ft === 'solid';
+      $('ins-fill-mid').checked = !!sel.colorMid;
+      $('ins-fill-colormid').hidden = !sel.colorMid;
+      $('ins-fill-midpos').hidden = !sel.colorMid;
+      if (sel.colorMid) {
+        $('ins-fill-colormid').value = sel.colorMid;
+        $('ins-fill-midpos').value = Math.round((sel.midPos ?? 0.5) * 100);
+      }
+    } else {
+      $('ins-fill-mid-row').hidden = true;
     }
     $('ins-text-section').hidden = sel.type !== 'text';
     if (sel.type === 'text') {
@@ -1089,6 +1270,23 @@ function syncInspector() {
       $('ins-text-color').value = sel.textColor;
       $('ins-text-outline-color').value = sel.outlineColor;
       $('ins-text-italic').checked = sel.italic;
+      $('ins-text-curve').value = sel.curve || 0;
+      $('ins-text-curve-val').textContent = (sel.curve || 0) + '°';
+    }
+    // effects: raster layers only (image + text)
+    const hasFxUI = sel.type === 'image' || sel.type === 'text';
+    $('ins-fx-section').hidden = !hasFxUI;
+    if (hasFxUI) {
+      const fx = sel.fx || {};
+      $('ins-fx-stroke').value = fx.strokeW || 0;
+      $('ins-fx-stroke-color').value = fx.strokeColor || '#000000';
+      $('ins-fx-shadow').value = fx.shadow || 0;
+      $('ins-fx-shadow-color').value = fx.shadowColor || '#000000';
+      $('ins-fx-shadow-off').hidden = !(fx.shadow > 0);
+      if (document.activeElement !== $('ins-fx-sdx')) $('ins-fx-sdx').value = fx.shadowDX ?? 8;
+      if (document.activeElement !== $('ins-fx-sdy')) $('ins-fx-sdy').value = fx.shadowDY ?? 8;
+      $('ins-fx-glow').value = fx.glow || 0;
+      $('ins-fx-glow-color').value = fx.glowColor || '#ffffff';
     }
     for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
       const el = $(id);
@@ -1705,6 +1903,61 @@ $('ins-fill-angle').addEventListener('input', () => {
 });
 $('ins-fill-angle').addEventListener('blur', () => syncInspector());
 
+// three-stop gradient controls
+$('ins-fill-mid').addEventListener('change', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill') return;
+  sel.colorMid = $('ins-fill-mid').checked ? $('ins-fill-colormid').value : null;
+  if (sel.midPos == null) sel.midPos = 0.5;
+  syncInspector();
+  rebuildLayerList();
+  markDirty();
+});
+$('ins-fill-colormid').addEventListener('input', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill' || !sel.colorMid) return;
+  sel.colorMid = $('ins-fill-colormid').value;
+  rebuildLayerList();
+  markDirty();
+});
+$('ins-fill-midpos').addEventListener('input', () => {
+  const sel = selectedLayer();
+  if (!sel || sel.type !== 'fill' || !sel.colorMid) return;
+  sel.midPos = parseInt($('ins-fill-midpos').value, 10) / 100;
+  rebuildLayerList();
+  markDirty();
+});
+
+// ---------- layer effects ----------
+
+// merge a patch into the layer's fx (creating it with defaults on first use);
+// an all-zero fx collapses back to null so untouched layers stay lean
+function setFx(patch) {
+  const sel = selectedLayer();
+  if (!sel || (sel.type !== 'image' && sel.type !== 'text')) return;
+  sel.fx = {
+    strokeW: 0, strokeColor: '#000000',
+    shadow: 0, shadowDX: 8, shadowDY: 8, shadowColor: '#000000',
+    glow: 0, glowColor: '#ffffff',
+    ...(sel.fx || {}), ...patch,
+  };
+  if (!sel.fx.strokeW && !sel.fx.shadow && !sel.fx.glow) sel.fx = null;
+  syncInspector();
+  markDirty();
+}
+$('ins-fx-stroke').addEventListener('input', () => setFx({ strokeW: parseInt($('ins-fx-stroke').value, 10) || 0 }));
+$('ins-fx-stroke-color').addEventListener('input', () => setFx({ strokeColor: $('ins-fx-stroke-color').value }));
+$('ins-fx-shadow').addEventListener('input', () => setFx({ shadow: parseInt($('ins-fx-shadow').value, 10) || 0 }));
+$('ins-fx-shadow-color').addEventListener('input', () => setFx({ shadowColor: $('ins-fx-shadow-color').value }));
+$('ins-fx-glow').addEventListener('input', () => setFx({ glow: parseInt($('ins-fx-glow').value, 10) || 0 }));
+$('ins-fx-glow-color').addEventListener('input', () => setFx({ glowColor: $('ins-fx-glow-color').value }));
+for (const [id, key] of [['ins-fx-sdx', 'shadowDX'], ['ins-fx-sdy', 'shadowDY']]) {
+  $(id).addEventListener('input', () => {
+    const v = parseInt($(id).value, 10);
+    if (Number.isFinite(v)) setFx({ [key]: Math.max(-60, Math.min(60, v)) });
+  });
+}
+
 $('btn-add-text').addEventListener('click', () => {
   const layer = createTextLayer();
   doc.layers.push(layer);
@@ -1822,6 +2075,11 @@ $('ins-text-font').addEventListener('change', () => {
 $('ins-text-color').addEventListener('input', () => setTextProp('textColor', $('ins-text-color').value));
 $('ins-text-outline-color').addEventListener('input', () => setTextProp('outlineColor', $('ins-text-outline-color').value));
 $('ins-text-italic').addEventListener('change', () => setTextProp('italic', $('ins-text-italic').checked));
+$('ins-text-curve').addEventListener('input', () => {
+  const v = parseInt($('ins-text-curve').value, 10) || 0;
+  $('ins-text-curve-val').textContent = v + '°';
+  setTextProp('curve', Math.max(-180, Math.min(180, v)));
+});
 for (const [id, prop, min, max] of [
   ['ins-text-size', 'fontSize', 40, 400],
   ['ins-text-outline-w', 'outlineWidth', 0, 30],
@@ -1886,6 +2144,37 @@ $('file-pattern').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (file) await addImageLayerFromFile(file, true);
+});
+
+// ---------- SimTex Pro bridge ----------
+// "+ SimTex" opens SimTex Pro in bridge mode; its "Send to Clearcoat" button
+// posts { type: 'simtex-texture', name, dataUrl } back to this window. Only
+// messages from the popup we opened are accepted.
+
+const SIMTEX_URL = 'https://oblivionspeak.github.io/simtex-pro/?bridge=clearcoat';
+let simtexWin = null;
+
+$('btn-add-simtex').addEventListener('click', () => {
+  simtexWin = window.open(SIMTEX_URL, 'simtex-bridge');
+  if (!simtexWin) { status('Popup blocked — allow popups for Clearcoat to use the SimTex bridge.', 'err'); return; }
+  status('SimTex Pro opened — design a texture, then hit "Send to Clearcoat".');
+});
+
+window.addEventListener('message', async (e) => {
+  const d = e.data;
+  if (!d || d.type !== 'simtex-texture' || typeof d.dataUrl !== 'string') return;
+  if (!simtexWin || e.source !== simtexWin) return;      // not our popup
+  if (!d.dataUrl.startsWith('data:image/')) return;
+  try {
+    const img = await loadImage(d.dataUrl);
+    const layer = createPatternLayer(img, d.dataUrl, String(d.name || 'SimTex texture').slice(0, 80));
+    doc.layers.push(layer);
+    selectLayer(layer.id);
+    markDirty();
+    status(`SimTex texture "${layer.name}" added as a tiling pattern — drag its corners to place it.`, 'ok');
+  } catch {
+    status('Could not load the texture SimTex sent over.', 'err');
+  }
 });
 
 // ---------- HUD ----------

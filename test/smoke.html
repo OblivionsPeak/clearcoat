@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>engine smoke</title></head>
+<body><pre id="out">running…</pre>
+<script type="module">
+import { createDoc, createTextLayer, regenerateText, createFillLayer, fillPaintStyle,
+         createImageLayer, createMaskedPatternLayer, renderPaint, renderSpec, serializeDoc, SIZE }
+  from './js/engine.js';
+
+const lines = [];
+const ok = (name, cond) => lines.push((cond ? 'PASS' : 'FAIL') + ' ' + name);
+try {
+  // curved text
+  const t = createTextLayer();
+  t.text = 'CURVED TEXT'; t.curve = 120; t.outlineWidth = 4;
+  regenerateText(t);
+  ok('curved-text-raster', t.img && t.img.width > 50 && t.img.height > 50);
+  t.curve = -90; regenerateText(t);
+  ok('curved-text-negative', t.img && t.img.width > 50);
+
+  // 3-stop gradient
+  const f = createFillLayer('#ff0000');
+  f.fillType = 'linear'; f.colorMid = '#00ff00'; f.midPos = 0.4;
+  const c2 = document.createElement('canvas'); c2.width = c2.height = 64;
+  const style = fillPaintStyle(c2.getContext('2d'), f, 0, 0, 64, 64);
+  ok('gradient-mid-stop', style && typeof style !== 'string');
+
+  // masked pattern layer
+  const mask = document.createElement('canvas'); mask.width = mask.height = SIZE;
+  const mctx = mask.getContext('2d'); mctx.fillStyle = '#fff'; mctx.fillRect(200, 200, 800, 800);
+  const tile = document.createElement('canvas'); tile.width = tile.height = 32;
+  const tctx = tile.getContext('2d'); tctx.fillStyle = '#f0f'; tctx.fillRect(0, 0, 32, 16);
+  const mp = createMaskedPatternLayer(mask, tile, 'test fill');
+  ok('masked-pattern-layer', mp.type === 'image' && mp.scale === 1 && mp.x === SIZE / 2);
+  // (500,490) sits in the opaque half of the 32px tile AND inside the mask;
+  // (50,42) is in the opaque tile half but OUTSIDE the mask
+  const a = mp.img.getContext('2d').getImageData(500, 490, 1, 1).data[3];
+  const b = mp.img.getContext('2d').getImageData(50, 42, 1, 1).data[3];
+  ok('masked-pattern-clip', a > 0 && b === 0);
+
+  // fx compositing through the full paint + spec pipeline
+  const doc = createDoc();
+  const il = createImageLayer(tile, tile.toDataURL(), 'logo');
+  il.fx = { strokeW: 8, strokeColor: '#00ff00', shadow: 12, shadowDX: 8, shadowDY: 8,
+            shadowColor: '#000000', glow: 10, glowColor: '#ffffff' };
+  doc.layers.push(il, t, mp);
+  const paint = renderPaint(doc);
+  const spec = renderSpec(doc);
+  ok('render-paint-with-fx', paint && paint.width === SIZE);
+  ok('render-spec-with-fx', spec && spec.width === SIZE);
+
+  // serialization round-trip fields
+  const s = serializeDoc(doc);
+  const st = s.layers.find(l => l.type === 'text');
+  const si = s.layers.find(l => l.name === 'logo');
+  ok('serialize-curve', st.curve === -90);
+  ok('serialize-fx', si.fx && si.fx.strokeW === 8);
+} catch (err) {
+  lines.push('THROW ' + err.message);
+}
+document.getElementById('out').textContent = lines.join('\n') + '\nDONE';
+</script></body></html>

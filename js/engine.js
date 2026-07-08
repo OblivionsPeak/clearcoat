@@ -147,6 +147,7 @@ export function createImageLayer(img, src, name) {
     visible: true,
     opacity: 1,
     material: 'gloss',
+    fx: null,          // optional layer effects (stroke/shadow/glow)
     img, src,
     x: SIZE / 2,
     y: SIZE / 2,
@@ -208,6 +209,8 @@ export function createTextLayer() {
     outlineWidth: 0,
     italic: false,
     letterSpacing: 0,
+    curve: 0,          // arc bend in degrees; 0 = straight, + arches up, − arches down
+    fx: null,          // optional layer effects (stroke/shadow/glow)
     x: SIZE / 2,
     y: SIZE / 2,
     scale: 1,
@@ -230,28 +233,86 @@ export function regenerateText(layer) {
   const fontStr = `${layer.italic ? 'italic ' : ''}${size}px "${layer.font || 'Arial Black'}"`;
   const spacing = `${Math.max(0, Math.min(40, layer.letterSpacing || 0))}px`;
   const lineH = size * 1.2;
+  const curve = Math.max(-180, Math.min(180, Number(layer.curve) || 0));
+  const margin = Math.ceil(outline) + Math.ceil(size * 0.15); // outline + italic overhang
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d');
-  ctx.font = fontStr;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
-  const maxW = Math.max(1, ...lines.map(t => ctx.measureText(t).width));
-  const margin = Math.ceil(outline) + Math.ceil(size * 0.15); // outline + italic overhang
-  c.width = Math.ceil(maxW) + margin * 2;
-  c.height = Math.ceil(lineH * lines.length) + margin * 2;
-  // resizing reset the context — set everything again
-  ctx.font = fontStr;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round';
-  ctx.fillStyle = layer.textColor || '#ffffff';
-  ctx.strokeStyle = layer.outlineColor || '#000000';
-  ctx.lineWidth = outline * 2; // half the stroke falls outside the glyph
-  lines.forEach((line, i) => {
-    const y = margin + lineH * (i + 0.5);
-    if (outline > 0) ctx.strokeText(line, c.width / 2, y);
-    ctx.fillText(line, c.width / 2, y);
-  });
+  if (!curve) {
+    // straight text — original rendering path
+    ctx.font = fontStr;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
+    const maxW = Math.max(1, ...lines.map(t => ctx.measureText(t).width));
+    c.width = Math.ceil(maxW) + margin * 2;
+    c.height = Math.ceil(lineH * lines.length) + margin * 2;
+    // resizing reset the context — set everything again
+    ctx.font = fontStr;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = layer.textColor || '#ffffff';
+    ctx.strokeStyle = layer.outlineColor || '#000000';
+    ctx.lineWidth = outline * 2; // half the stroke falls outside the glyph
+    lines.forEach((line, i) => {
+      const y = margin + lineH * (i + 0.5);
+      if (outline > 0) ctx.strokeText(line, c.width / 2, y);
+      ctx.fillText(line, c.width / 2, y);
+    });
+  } else {
+    // curved text — glyphs laid glyph-by-glyph along a circular arc whose
+    // total angle is `curve` degrees. Positive arches upward (bends along the
+    // top of a circle), negative arches downward. Letter-spacing gaps are
+    // inserted manually between glyphs so measurement stays exact.
+    const spacingPx = Math.max(0, Math.min(40, layer.letterSpacing || 0));
+    const theta = Math.abs(curve) * Math.PI / 180;
+    const dir = curve > 0 ? 1 : -1;
+    ctx.font = fontStr;
+    const lineData = lines.map(text => {
+      const chars = Array.from(text);
+      const widths = chars.map(ch => ctx.measureText(ch).width);
+      const total = widths.reduce((a, b) => a + b, 0) + spacingPx * Math.max(0, chars.length - 1);
+      return { chars, widths, total };
+    });
+    // arc bounding box: chord extent horizontally, sagitta (arc rise) vertically
+    let maxW = 1, maxSag = 0;
+    for (const ld of lineData) {
+      const R = Math.max(ld.total, 1) / theta;
+      const half = theta / 2;
+      const xExt = (half >= Math.PI / 2 ? R : R * Math.sin(half)) + size;
+      const sag = R * (1 - Math.cos(Math.min(half, Math.PI)));
+      maxW = Math.max(maxW, xExt * 2);
+      maxSag = Math.max(maxSag, sag);
+    }
+    c.width = Math.ceil(maxW) + margin * 2;
+    c.height = Math.ceil(lineH * lines.length + maxSag) + margin * 2;
+    // resizing reset the context — set everything again
+    ctx.font = fontStr;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'; // gaps applied manually
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = layer.textColor || '#ffffff';
+    ctx.strokeStyle = layer.outlineColor || '#000000';
+    ctx.lineWidth = outline * 2; // half the stroke falls outside the glyph
+    lineData.forEach((ld, i) => {
+      if (!ld.chars.length) return;
+      const R = Math.max(ld.total, 1) / theta;
+      const sag = R * (1 - Math.cos(Math.min(theta / 2, Math.PI)));
+      // center each line's arc vertically on its nominal line slot
+      const lineY = margin + maxSag / 2 + lineH * (i + 0.5) - dir * sag / 2;
+      let s = -ld.total / 2; // arc-length cursor from the line's midpoint
+      ld.chars.forEach((ch, j) => {
+        const phi = (s + ld.widths[j] / 2) / R; // signed angle from arc midpoint
+        ctx.save();
+        ctx.translate(c.width / 2 + R * Math.sin(phi), lineY + dir * R * (1 - Math.cos(phi)));
+        ctx.rotate(dir * phi);
+        if (outline > 0) ctx.strokeText(ch, 0, 0);
+        ctx.fillText(ch, 0, 0);
+        ctx.restore();
+        s += ld.widths[j] + spacingPx;
+      });
+    });
+  }
   layer.img = c;
   layer.src = c.toDataURL('image/png');
   delete layer._albedo; // shader-ball albedo cache is stale now
@@ -276,6 +337,25 @@ export function createPatternLayer(img, src, name) {
   };
 }
 
+// wand-selection pattern fill: tile `img` across the whole sheet, clipped to
+// the alpha of a SIZE×SIZE selection mask, baked into a normal image layer
+export function createMaskedPatternLayer(maskCanvas, img, name) {
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = ctx.createPattern(img, 'repeat');
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(maskCanvas, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  const layer = createImageLayer(c, c.toDataURL('image/png'), name || 'pattern fill');
+  // the canvas is already in doc space — undo createImageLayer's auto-fit
+  layer.x = SIZE / 2;
+  layer.y = SIZE / 2;
+  layer.scale = 1;
+  return layer;
+}
+
 // solid-color material patch — a resizable shape carrying its own color
 // and material, so finishes (pearl, flake…) can be placed without an image
 export function createFillLayer(color = '#e8e6e1') {
@@ -290,6 +370,8 @@ export function createFillLayer(color = '#e8e6e1') {
     shape: 'rect',         // rect | ellipse | triangle | diamond | stripe
     fillType: 'solid',     // solid | linear | radial
     color2: '#101114',     // gradient end color
+    colorMid: null,        // optional third gradient stop (hex) — null = two-stop
+    midPos: 0.5,           // mid stop position 0–1
     gradAngle: 0,          // linear gradient angle in degrees, 0 = left → right
     x: 0, y: 0, scale: 1, rotation: 0, flipH: false, flipV: false,
     rx: SIZE / 2 - 300, ry: SIZE / 2 - 200, rw: 600, rh: 400,
@@ -348,6 +430,10 @@ export function fillPaintStyle(ctx, layer, rx, ry, rw, rh) {
     g = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
   }
   g.addColorStop(0, color);
+  if (layer.colorMid) {
+    const mid = Math.max(0.02, Math.min(0.98, layer.midPos ?? 0.5));
+    g.addColorStop(mid, layer.colorMid);
+  }
   g.addColorStop(1, layer.color2 || '#101114');
   return g;
 }
@@ -373,11 +459,15 @@ const specCanvas = document.createElement('canvas');
 specCanvas.width = specCanvas.height = SIZE;
 const scratch = document.createElement('canvas');
 scratch.width = scratch.height = SIZE;
+// dedicated fx scratch canvases — drawLayer is itself called with `scratch`
+// as the target (applyTint, renderSpec), so effects need their own buffers
+const fxScratch = document.createElement('canvas');
+fxScratch.width = fxScratch.height = SIZE;
+const fxTint = document.createElement('canvas');
+fxTint.width = fxTint.height = SIZE;
 
-function drawLayer(ctx, layer) {
-  ctx.save();
-  ctx.globalAlpha = layer.opacity;
-  ctx.globalCompositeOperation = (BLEND_MODES[layer.blend] || BLEND_MODES.normal).op;
+// the layer's own pixels, without opacity/blend/effects
+function drawLayerContent(ctx, layer) {
   if (layer.type === 'fill') {
     const rx = layer.rx ?? 0, ry = layer.ry ?? 0, rw = layer.rw ?? SIZE, rh = layer.rh ?? SIZE;
     ctx.fillStyle = fillPaintStyle(ctx, layer, rx, ry, rw, rh);
@@ -392,10 +482,77 @@ function drawLayer(ctx, layer) {
     ctx.fillStyle = pat;
     ctx.fillRect(layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE);
   } else {
+    ctx.save();
     const m = layerMatrix(layer);
     ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
     ctx.drawImage(layer.img, -layer.img.width / 2, -layer.img.height / 2);
+    ctx.restore();
   }
+}
+
+function drawLayer(ctx, layer, forSpec = false) {
+  // layer effects apply only to raster layers (image/text). Stroke changes
+  // the design silhouette so it renders in both paint and spec passes;
+  // shadow and glow are paint-only cosmetics.
+  const fx = layer.fx;
+  const hasImgFx = fx && layer.img && (layer.type === 'image' || layer.type === 'text');
+  const doStroke = hasImgFx && fx.strokeW > 0;
+  const doShadow = hasImgFx && !forSpec && fx.shadow > 0;
+  const doGlow = hasImgFx && !forSpec && fx.glow > 0;
+  ctx.save();
+  ctx.globalAlpha = layer.opacity;
+  ctx.globalCompositeOperation = (BLEND_MODES[layer.blend] || BLEND_MODES.normal).op;
+  if (!doStroke && !doShadow && !doGlow) {
+    drawLayerContent(ctx, layer);
+    ctx.restore();
+    return;
+  }
+  // render the transformed layer once into a doc-space buffer, then stamp
+  // effects (bottom → top: shadow, glow, stroke) beneath the layer itself
+  const rctx = fxScratch.getContext('2d');
+  rctx.clearRect(0, 0, SIZE, SIZE);
+  drawLayerContent(rctx, layer);
+  if (doShadow) {
+    // draw the buffer fully off-canvas and let the shadow land in view
+    ctx.save();
+    ctx.shadowColor = fx.shadowColor || '#000000';
+    ctx.shadowBlur = Math.max(0, Math.min(60, fx.shadow));
+    ctx.shadowOffsetX = SIZE + (fx.shadowDX ?? 8);
+    ctx.shadowOffsetY = fx.shadowDY ?? 8;
+    ctx.drawImage(fxScratch, -SIZE, 0);
+    ctx.restore();
+  }
+  if (doGlow) {
+    ctx.save();
+    ctx.shadowColor = fx.glowColor || '#ffffff';
+    ctx.shadowBlur = Math.max(1, Math.min(60, fx.glow));
+    ctx.shadowOffsetX = SIZE; // zero net offset — glow sits behind the layer
+    ctx.shadowOffsetY = 0;
+    for (let i = 0; i < 3; i++) ctx.drawImage(fxScratch, -SIZE, 0); // stamped for intensity
+    ctx.restore();
+  }
+  if (doStroke) {
+    const w = Math.max(0, Math.min(40, fx.strokeW));
+    // silhouette tinted with the stroke color (applyTint's source-in trick)
+    const tctx = fxTint.getContext('2d');
+    tctx.clearRect(0, 0, SIZE, SIZE);
+    tctx.save();
+    tctx.drawImage(fxScratch, 0, 0);
+    tctx.globalCompositeOperation = 'source-in';
+    tctx.fillStyle = fx.strokeColor || '#000000';
+    tctx.fillRect(0, 0, SIZE, SIZE);
+    tctx.restore();
+    // stamp around a circle; intermediate radii close gaps on wide strokes
+    const radii = w > 12 ? [w, w * 2 / 3, w / 3] : w > 4 ? [w, w / 2] : [w];
+    const steps = Math.max(12, Math.ceil(w * 1.5));
+    for (const r of radii) {
+      for (let k = 0; k < steps; k++) {
+        const a = (k / steps) * Math.PI * 2;
+        ctx.drawImage(fxTint, Math.cos(a) * r, Math.sin(a) * r);
+      }
+    }
+  }
+  ctx.drawImage(fxScratch, 0, 0);
   ctx.restore();
 }
 
@@ -415,7 +572,7 @@ function applyTint(ctx, layer) {
   if (!amt || !p.tint) return;
   const sctx = scratch.getContext('2d');
   sctx.clearRect(0, 0, SIZE, SIZE);
-  drawLayer(sctx, layer);
+  drawLayer(sctx, layer, false);
   sctx.save();
   sctx.globalCompositeOperation = 'source-in';
   sctx.fillStyle = p.tint;
@@ -441,7 +598,7 @@ function paintBase(ctx, doc) {
 }
 
 function paintLayerInto(ctx, layer) {
-  drawLayer(ctx, layer);
+  drawLayer(ctx, layer, false);
   applyTint(ctx, layer);
 }
 
@@ -528,7 +685,7 @@ export function renderSpec(doc) {
     // paint the layer's silhouette, then fill it with the material —
     // flat channel values, or a procedural micro-texture for tex materials
     sctx.clearRect(0, 0, SIZE, SIZE);
-    drawLayer(sctx, layer);
+    drawLayer(sctx, layer, true); // silhouette pass — stroke fx included, shadow/glow not
     sctx.save();
     sctx.globalCompositeOperation = 'source-in';
     if (mat.tex) {
@@ -712,12 +869,15 @@ export function serializeDoc(doc) {
       matParams: l.matParams || null,
       specBlend: l.specBlend || 'replace',
       specOnly: !!l.specOnly,
+      fx: l.fx || null,
       color: l.color,
       shape: l.shape, fillType: l.fillType, color2: l.color2, gradAngle: l.gradAngle,
+      colorMid: l.colorMid ?? null, midPos: l.midPos ?? 0.5,
       src: l.src,
       text: l.text, font: l.font, fontSize: l.fontSize,
       textColor: l.textColor, outlineColor: l.outlineColor, outlineWidth: l.outlineWidth,
       italic: l.italic, letterSpacing: l.letterSpacing,
+      curve: l.curve || 0,
       x: l.x, y: l.y, scale: l.scale, rotation: l.rotation,
       skewX: l.skewX || 0, skewY: l.skewY || 0,
       flipH: l.flipH, flipV: l.flipV,
@@ -733,6 +893,21 @@ export function loadImage(src) {
     img.onerror = () => reject(new Error('Could not load image'));
     img.src = src;
   });
+}
+
+// restore a saved fx block, coercing missing sub-fields to the UI defaults
+function normalizeFx(fx) {
+  if (!fx || typeof fx !== 'object') return null;
+  return {
+    strokeW: fx.strokeW ?? 0,
+    strokeColor: fx.strokeColor || '#000000',
+    shadow: fx.shadow ?? 0,
+    shadowDX: fx.shadowDX ?? 8,
+    shadowDY: fx.shadowDY ?? 8,
+    shadowColor: fx.shadowColor || '#000000',
+    glow: fx.glow ?? 0,
+    glowColor: fx.glowColor || '#ffffff',
+  };
 }
 
 export async function deserializeDoc(data) {
@@ -782,6 +957,8 @@ export async function deserializeDoc(data) {
           shape: l.shape || 'rect',
           fillType: l.fillType || 'solid',
           color2: l.color2 || '#101114',
+          colorMid: l.colorMid || null,
+          midPos: l.midPos ?? 0.5,
           gradAngle: l.gradAngle ?? 0,
           rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
         });
@@ -802,6 +979,8 @@ export async function deserializeDoc(data) {
           outlineColor: l.outlineColor || '#000000',
           outlineWidth: l.outlineWidth ?? 0,
           italic: !!l.italic, letterSpacing: l.letterSpacing ?? 0,
+          curve: l.curve ?? 0,
+          fx: normalizeFx(l.fx),
           x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
           scale: l.scale ?? 1, rotation: l.rotation ?? 0,
           skewX: l.skewX ?? 0, skewY: l.skewY ?? 0,
@@ -824,6 +1003,7 @@ export async function deserializeDoc(data) {
         matParams: l.matParams || null,
         specBlend: l.specBlend || 'replace',
         specOnly: !!l.specOnly,
+        fx: normalizeFx(l.fx),
         img, src: l.src,
         x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
         scale: l.scale ?? 1, rotation: l.rotation ?? 0,
