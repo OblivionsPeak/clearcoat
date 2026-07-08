@@ -2591,17 +2591,24 @@ $('btn-export-png').addEventListener('click', () => {
 // only the sim can) and open the upload page.
 $('btn-send-tp').addEventListener('click', async () => {
   // grab the spec MIP first if the folder is linked and the sim has made one
-  let gotMip = false;
+  let gotMip = false, staleMip = false;
   try {
     const custid = $('custid').value.trim();
     if (/^\d+$/.test(custid)) {
       const handle = await effectivePaintsDir();
       if (handle) {
+        // the MIP is only as fresh as the last showroom visit — compare it
+        // to the spec TGA it was generated from
+        const specTga = await persist.readFileFromFolder(handle, `car_spec_${custid}.tga`);
         const mips = (await persist.listFolder(handle))
           .filter(n => /^car_spec_.*\.mip$/i.test(n) && n.includes(custid));
         for (const n of mips) {
           const f = await persist.readFileFromFolder(handle, n);
-          if (f) { downloadBlob(f, n); gotMip = true; }
+          if (f) {
+            downloadBlob(f, n);
+            gotMip = true;
+            if (specTga && f.lastModified < specTga.lastModified) staleMip = true;
+          }
         }
       }
     }
@@ -2609,9 +2616,13 @@ $('btn-send-tp').addEventListener('click', async () => {
   exportPaintCanvas(renderPaint(doc)).toBlob((blob) => {
     downloadBlob(blob, safeName() + '.png');
     window.open('https://www.tradingpaints.com/upload', '_blank', 'noopener');
-    status(gotMip
-      ? 'PNG + spec MIP copied to Downloads, Trading Paints upload opened — in the TP form pick the PNG as the paint and the car_spec .mip as the spec map (both from Downloads; the paints-folder originals are untouched).'
-      : 'PNG saved to Downloads + Trading Paints upload opened. For the spec map: Save to iRacing, open the showroom once (the sim writes the .mip into the paints folder), then Get MIPs copies it to Downloads for the TP form.', 'ok');
+    if (staleMip) {
+      status('⚠ The spec MIP is OLDER than your latest spec map — it predates your current finishes. Open the sim showroom once (it regenerates the .mip), then Send to TP again. Uploading this one bakes in your OLD materials.', 'err');
+    } else {
+      status(gotMip
+        ? 'PNG + spec MIP copied to Downloads, Trading Paints upload opened — pick the PNG as the paint and the car_spec .mip as the spec map. Note: custom spec maps need Trading Paints Pro; without Pro, TP serves the paint with default shine.'
+        : 'PNG saved to Downloads + Trading Paints upload opened. For the spec map: Save to iRacing, open the showroom once (the sim writes the .mip into the paints folder), then Get MIPs copies it to Downloads for the TP form.', 'ok');
+    }
   }, 'image/png');
 });
 
