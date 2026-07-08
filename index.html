@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.32</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.33</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -49,6 +49,7 @@
     <button id="btn-link-folder" class="tb-btn" title="Pick your iRacing paints folder once — link the paints root and choose the car here, or link a single car folder directly">Link Folder</button>
     <select id="paints-car" class="custid paint-target" title="Which car folder inside the linked paints folder to save into" aria-label="Car folder" hidden></select>
     <button id="btn-save-iracing" class="tb-btn accent" title="Write car TGAs into the linked folder (your existing paint is snapshotted to clearcoat-backup/ first) — the iRacing showroom hot-reloads them" disabled>Save to iRacing</button>
+    <label class="tb-check" title="Trading Paints' desktop app re-downloads your active TP livery over Clearcoat's saved file, so the sim keeps loading the TP paint. TP Guard watches the file after every Clearcoat save and instantly writes your design back whenever something else overwrites it. For a permanent fix, use 'Send to TP' to upload the design to Trading Paints."><input type="checkbox" id="tp-guard"> TP&nbsp;Guard</label>
     <label class="tb-check" title="Stream every settled edit straight into the iRacing folder — keep the sim showroom open on a second monitor and it becomes Clearcoat's live preview"><input type="checkbox" id="live-sync"> Live</label>
     <label class="tb-check" title="iRacing Custom Number paints use car_num_<id>.tga instead of car_<id>.tga — check this if your number is part of the paint"><input type="checkbox" id="custom-number"> Custom&nbsp;#</label>
     <button id="btn-restore-original" class="tb-btn" title="Put the snapshotted original paint (e.g. your Trading Paints livery) back" hidden>Restore</button>
@@ -58,6 +59,7 @@
   <div class="topbar-group divider">
     <button id="btn-export-tga" class="tb-btn" title="Download paint + spec map as TGA">Export TGA</button>
     <button id="btn-export-png" class="tb-btn" title="Download paint as PNG">Export PNG</button>
+    <button id="btn-send-tp" class="tb-btn" title="Make Trading Paints serve THIS design: downloads the paint as PNG and opens the Trading Paints upload page — upload it there and the TP app will distribute your Clearcoat livery instead of fighting it">Send to TP</button>
     <a class="tb-btn support-btn" href="https://ko-fi.com/metalprophecymedia" target="_blank" rel="noopener" title="Clearcoat is free — tips keep it growing">♥ Support</a>
   </div>
 </header>

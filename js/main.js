@@ -2571,6 +2571,17 @@ $('btn-export-png').addEventListener('click', () => {
   }, 'image/png');
 });
 
+// Make Trading Paints serve the Clearcoat design: download the PNG TP wants
+// and open its upload page — once uploaded, the TP app distributes this
+// livery instead of overwriting it.
+$('btn-send-tp').addEventListener('click', () => {
+  exportPaintCanvas(renderPaint(doc)).toBlob((blob) => {
+    downloadBlob(blob, safeName() + '.png');
+    window.open('https://www.tradingpaints.com/upload', '_blank', 'noopener');
+    status('PNG downloaded + Trading Paints upload opened — upload the PNG there and TP will serve your Clearcoat design. (Spec maps: use Get MIPs.)', 'ok');
+  }, 'image/png');
+});
+
 $('btn-export-tga').addEventListener('click', () => {
   downloadBlob(canvasToTGA(exportPaintCanvas(renderPaint(doc))), safeName() + '.tga');
   if (doc.target === 'car') {
@@ -2735,6 +2746,7 @@ async function saveToiRacing({ quiet = false } = {}) {
     const [paintName, specName] = paintFilenames(custid);
     await persist.writeFileToFolder(handle, paintName, canvasToTGA(exportPaintCanvas(renderPaint(doc))));
     if (specName) await persist.writeFileToFolder(handle, specName, canvasToTGA(renderSpec(doc), { alpha: true }));
+    await recordGuardBaseline(handle, custid);
     if (quiet) {
       $('status-fs').textContent = '📁 live · ' + new Date().toLocaleTimeString();
     } else {
@@ -2792,6 +2804,75 @@ $('live-sync').addEventListener('change', () => {
   }
 });
 
+// ---------- TP Guard ----------
+// The Trading Paints desktop app re-downloads the user's active TP livery
+// into the paints folder, silently clobbering whatever Clearcoat just saved
+// — so the sim keeps loading the TP paint. While TP Guard is on, Clearcoat
+// remembers the exact file stats of everything it wrote and polls the
+// folder; the moment those files change under it, it writes the design
+// straight back. Arms after the first Save to iRacing (or Live Sync write).
+
+const TP_GUARD_MS = 3000;
+let tpGuardInterval = null;
+let tpGuardExpected = {}; // filename → { size, lastModified } of Clearcoat's own write
+let tpGuardHits = 0;
+let tpGuardBusy = false;
+
+async function recordGuardBaseline(handle, custid) {
+  for (const name of paintFilenames(custid)) {
+    if (!name) continue;
+    const f = await persist.readFileFromFolder(handle, name);
+    if (f) tpGuardExpected[name] = { size: f.size, lastModified: f.lastModified };
+  }
+}
+
+async function tpGuardTick() {
+  if (!$('tp-guard').checked || tpGuardBusy || liveSyncBusy) return;
+  const custid = $('custid').value.trim();
+  if (!/^\d+$/.test(custid)) return;
+  tpGuardBusy = true;
+  try {
+    const handle = await effectivePaintsDir(); // never prompts from a timer
+    if (!handle) return;
+    let clobbered = null;
+    for (const name of paintFilenames(custid)) {
+      if (!name) continue;
+      const exp = tpGuardExpected[name];
+      if (!exp) continue; // guard arms per file once Clearcoat has written it
+      const f = await persist.readFileFromFolder(handle, name);
+      if (!f || f.size !== exp.size || f.lastModified !== exp.lastModified) { clobbered = name; break; }
+    }
+    if (clobbered) {
+      const ok = await saveToiRacing({ quiet: true }); // rewrite + refresh baseline
+      if (ok) {
+        tpGuardHits++;
+        $('status-fs').textContent = `📁 guarded · put back ${tpGuardHits}×`;
+        status(`Trading Paints overwrote ${clobbered} — Clearcoat put your design back (${tpGuardHits}×). "Send to TP" uploads it to Trading Paints for a permanent fix.`, 'ok');
+      }
+    }
+  } catch { /* transient read hiccup — next tick retries */ }
+  finally { tpGuardBusy = false; }
+}
+
+function setTpGuard(on) {
+  clearInterval(tpGuardInterval);
+  tpGuardInterval = null;
+  if (on) tpGuardInterval = setInterval(tpGuardTick, TP_GUARD_MS);
+}
+
+$('tp-guard').addEventListener('change', () => {
+  const on = $('tp-guard').checked;
+  persist.saveSetting('tpGuard', on).catch(() => {});
+  setTpGuard(on);
+  if (on) {
+    status(Object.keys(tpGuardExpected).length
+      ? 'TP Guard on — if Trading Paints overwrites your paint, Clearcoat instantly puts it back.'
+      : 'TP Guard on — it arms after your next Save to iRacing.', 'ok');
+  } else {
+    status('TP Guard off.');
+  }
+});
+
 // Put the snapshotted originals back and clear the snapshot, so the next
 // Clearcoat save re-snapshots whatever is current.
 $('btn-restore-original').addEventListener('click', async () => {
@@ -2812,7 +2893,11 @@ $('btn-restore-original').addEventListener('click', async () => {
         restored++;
       }
     }
-    status(restored ? 'Original paint restored.' : 'No backup found to restore.', restored ? 'ok' : 'err');
+    // disarm TP Guard — otherwise it would immediately overwrite the restore
+    tpGuardExpected = {};
+    status(restored
+      ? 'Original paint restored.' + ($('tp-guard').checked ? ' TP Guard is disarmed until your next Clearcoat save.' : '')
+      : 'No backup found to restore.', restored ? 'ok' : 'err');
     refreshRestoreButton(handle, custid);
   } catch (err) {
     status('Restore failed: ' + err.message, 'err');
@@ -3031,6 +3116,8 @@ window.addEventListener('resize', requestRender);
   const legacyCustomNum = await persist.loadSetting('customNumber').catch(() => null);
   const liveSync = await persist.loadSetting('liveSync').catch(() => null);
   if (liveSync && persist.fsSupported()) $('live-sync').checked = true;
+  const tpGuard = await persist.loadSetting('tpGuard').catch(() => null);
+  if (tpGuard && persist.fsSupported()) { $('tp-guard').checked = true; setTpGuard(true); }
 
   let auto = await persist.loadAutosave().catch(() => null);
   if (typeof auto === 'string') { try { auto = JSON.parse(auto); } catch { auto = null; } }
