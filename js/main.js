@@ -2572,13 +2572,31 @@ $('btn-export-png').addEventListener('click', () => {
 });
 
 // Make Trading Paints serve the Clearcoat design: download the PNG TP wants
-// and open its upload page — once uploaded, the TP app distributes this
-// livery instead of overwriting it.
-$('btn-send-tp').addEventListener('click', () => {
+// (plus the sim-generated spec .mip when it exists — TP can't create MIPs,
+// only the sim can) and open the upload page.
+$('btn-send-tp').addEventListener('click', async () => {
+  // grab the spec MIP first if the folder is linked and the sim has made one
+  let gotMip = false;
+  try {
+    const custid = $('custid').value.trim();
+    if (/^\d+$/.test(custid)) {
+      const handle = await effectivePaintsDir();
+      if (handle) {
+        const mips = (await persist.listFolder(handle))
+          .filter(n => /^car_spec_.*\.mip$/i.test(n) && n.includes(custid));
+        for (const n of mips) {
+          const f = await persist.readFileFromFolder(handle, n);
+          if (f) { downloadBlob(f, n); gotMip = true; }
+        }
+      }
+    }
+  } catch { /* no folder / no MIP yet — PNG alone still uploads */ }
   exportPaintCanvas(renderPaint(doc)).toBlob((blob) => {
     downloadBlob(blob, safeName() + '.png');
     window.open('https://www.tradingpaints.com/upload', '_blank', 'noopener');
-    status('PNG downloaded + Trading Paints upload opened — upload the PNG there and TP will serve your Clearcoat design. (Spec maps: use Get MIPs.)', 'ok');
+    status(gotMip
+      ? 'PNG + spec MIP downloaded, Trading Paints upload opened — upload the PNG as the paint and the car_spec .mip as the spec map.'
+      : 'PNG downloaded + Trading Paints upload opened. For the spec map: Save to iRacing, open the showroom once (the sim generates the .mip), then Get MIPs.', 'ok');
   }, 'image/png');
 });
 
