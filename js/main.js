@@ -1122,6 +1122,21 @@ function rebuildLayerList() {
       duplicateLayer(layer);
     });
 
+    const del = document.createElement('button');
+    del.className = 'vis';
+    del.title = 'Delete layer (or select it and press Delete)';
+    del.textContent = '🗑';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      doc.layers = doc.layers.filter(x => x !== layer);
+      selectedIds.delete(layer.id);
+      if (selectedId === layer.id) selectedId = [...selectedIds].pop() || null;
+      rebuildLayerList();
+      syncInspector();
+      markDirty();
+      status(`Layer "${layer.name}" deleted — Ctrl+Z brings it back.`);
+    });
+
     const lock = document.createElement('button');
     lock.className = 'vis' + (layer.locked ? ' locked' : '');
     lock.title = layer.locked ? 'Unlock layer (canvas clicks pass through it)' : 'Lock layer — clicks on the canvas pass through to layers beneath';
@@ -1155,7 +1170,7 @@ function rebuildLayerList() {
     down.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(layer, -1); });
     order.append(up, down);
 
-    li.append(thumb, name, mat, dup, lock, vis, order);
+    li.append(thumb, name, mat, dup, lock, vis, del, order);
     li.addEventListener('click', (e) => {
       if (e.ctrlKey || e.metaKey) toggleSelect(layer.id);
       else selectLayer(layer.id);
@@ -3007,12 +3022,43 @@ $('btn-import-paint').addEventListener('click', async () => {
     const candidates = doc.target === 'car'
       ? [`car_${custid}.tga`, `car_num_${custid}.tga`]
       : [`${doc.target}_${custid}.tga`];
-    let file = null, picked = null;
+    let file = null, picked = null, note = '';
     for (const name of candidates) {
-      // prefer the pristine backup if one exists (folder copy may be ours)
-      file = (bdir && await persist.readFileFromFolder(bdir, name))
-          || await persist.readFileFromFolder(handle, name);
-      if (file) { picked = name; break; }
+      const live = await persist.readFileFromFolder(handle, name);
+      const backup = bdir && await persist.readFileFromFolder(bdir, name);
+      // Use the live folder file — that's what the sim is showing — UNLESS
+      // it's provably Clearcoat's own write (TP Guard baseline match), in
+      // which case the pristine backup is the user's real TP livery.
+      const exp = tpGuardExpected[name];
+      const liveIsOurs = live && exp && live.size === exp.size && live.lastModified === exp.lastModified;
+      if (live && !liveIsOurs) { file = live; picked = name; break; }
+      if (backup) { file = backup; picked = name; note = ' (from clearcoat-backup — the snapshot taken before Clearcoat overwrote it)'; break; }
+      if (live) { file = live; picked = name; break; }
+    }
+
+    if (!file) {
+      // maybe the paint lives in a different car folder under the linked
+      // root — scan siblings and switch the dropdown to the first hit
+      const root = await persist.getPaintsFolder().catch(() => null);
+      if (root) {
+        for (const sub of await persist.listSubdirs(root)) {
+          if (sub === 'clearcoat-backup') continue;
+          try {
+            const dh = await root.getDirectoryHandle(sub);
+            for (const name of candidates) {
+              const f = await persist.readFileFromFolder(dh, name);
+              if (f) {
+                file = f; picked = name;
+                note = ` (found in ${sub}/ — car dropdown switched to it)`;
+                await persist.saveSetting('paintsCar', sub);
+                refreshFsStatus();
+                break;
+              }
+            }
+          } catch { /* unreadable subfolder — skip */ }
+          if (file) break;
+        }
+      }
     }
 
     if (!file) {
@@ -3036,7 +3082,7 @@ $('btn-import-paint').addEventListener('click', async () => {
     }
 
     await addTgaAsLayer(await file.arrayBuffer(), picked.replace(/\.tga$/i, ''));
-    status(`Imported ${picked} as a layer.`, 'ok');
+    status(`Imported ${picked}${note} as a layer.`, 'ok');
   } catch (err) {
     status('Import failed: ' + err.message, 'err');
   }
