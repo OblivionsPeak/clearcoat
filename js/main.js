@@ -681,10 +681,21 @@ viewport.addEventListener('pointerdown', (e) => {
         startAngle: Math.atan2(p.y - sel.y, p.x - sel.x) * 180 / Math.PI - sel.rotation,
       };
     } else if (handle.type === 'region') {
-      // anchor = the corner opposite the grabbed one
-      const corners = layerCorners(sel);
-      const anchor = corners[(handle.corner + 2) % 4];
-      drag = { mode: 'region', layer: sel, anchor };
+      // corners resize the coverage region; Ctrl+corner on a pattern zooms
+      // the texture itself around the region center instead
+      if ((e.ctrlKey || e.metaKey) && sel.type === 'pattern') {
+        const cx = sel.rx + sel.rw / 2, cy = sel.ry + sel.rh / 2;
+        drag = {
+          mode: 'pattern-zoom', layer: sel, cx, cy,
+          startDist: Math.hypot(p.x - cx, p.y - cy),
+          startScale: sel.scale, startX: sel.x, startY: sel.y,
+        };
+      } else {
+        // anchor = the corner opposite the grabbed one
+        const corners = layerCorners(sel);
+        const anchor = corners[(handle.corner + 2) % 4];
+        drag = { mode: 'region', layer: sel, anchor };
+      }
     } else {
       drag = {
         mode: 'scale', layer: sel,
@@ -824,6 +835,19 @@ viewport.addEventListener('pointermove', (e) => {
         syncInspector();
         markDirty();
       }
+      break;
+    }
+    case 'pattern-zoom': {
+      const dist = Math.hypot(p.x - drag.cx, p.y - drag.cy);
+      if (drag.startDist < 1) break;
+      const f = Math.max(0.05, dist / drag.startDist);
+      const l = drag.layer;
+      l.scale = Math.max(0.01, drag.startScale * f);
+      // keep the zoom visually centered: the tile origin orbits the region center
+      l.x = Math.round(drag.cx + (drag.startX - drag.cx) * f);
+      l.y = Math.round(drag.cy + (drag.startY - drag.cy) * f);
+      syncInspector();
+      markDirty();
       break;
     }
     case 'rotate': {
@@ -1045,6 +1069,8 @@ async function addImageLayerFromFile(file, asPattern = false) {
   }
 }
 
+let patternHintShown = false;
+
 function selectLayer(id) {
   selectedId = id;
   selectedIds.clear();
@@ -1052,6 +1078,14 @@ function selectLayer(id) {
   rebuildLayerList();
   syncInspector();
   requestRender();
+  // patterns confuse first-timers: corners crop coverage, they don't scale
+  if (!patternHintShown) {
+    const sel = selectedLayer();
+    if (sel && sel.type === 'pattern') {
+      patternHintShown = true;
+      status('Pattern layer: corner handles resize the COVERAGE region (what area it tiles). To resize the texture itself, Ctrl+drag a corner or use the Scale field.');
+    }
+  }
 }
 
 // Ctrl+click in the layer list adds/removes from the selection
