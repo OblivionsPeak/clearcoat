@@ -2567,7 +2567,7 @@ $('btn-export-png').addEventListener('click', () => {
   // helmets ship at 1024 — the PNG matches what the TGA would be
   exportPaintCanvas(renderPaint(doc)).toBlob((blob) => {
     downloadBlob(blob, safeName() + '.png');
-    status('PNG exported.', 'ok');
+    status('PNG saved to your Downloads folder.', 'ok');
   }, 'image/png');
 });
 
@@ -2595,18 +2595,22 @@ $('btn-send-tp').addEventListener('click', async () => {
     downloadBlob(blob, safeName() + '.png');
     window.open('https://www.tradingpaints.com/upload', '_blank', 'noopener');
     status(gotMip
-      ? 'PNG + spec MIP downloaded, Trading Paints upload opened — upload the PNG as the paint and the car_spec .mip as the spec map.'
-      : 'PNG downloaded + Trading Paints upload opened. For the spec map: Save to iRacing, open the showroom once (the sim generates the .mip), then Get MIPs.', 'ok');
+      ? 'PNG + spec MIP copied to Downloads, Trading Paints upload opened — in the TP form pick the PNG as the paint and the car_spec .mip as the spec map (both from Downloads; the paints-folder originals are untouched).'
+      : 'PNG saved to Downloads + Trading Paints upload opened. For the spec map: Save to iRacing, open the showroom once (the sim writes the .mip into the paints folder), then Get MIPs copies it to Downloads for the TP form.', 'ok');
   }, 'image/png');
 });
 
 $('btn-export-tga').addEventListener('click', () => {
   downloadBlob(canvasToTGA(exportPaintCanvas(renderPaint(doc))), safeName() + '.tga');
+  // if a paints folder is linked, remind that the direct path exists
+  const tip = !$('btn-save-iracing').disabled
+    ? ' Tip: "Save to iRacing" writes them straight into your linked paints folder instead.'
+    : '';
   if (doc.target === 'car') {
     downloadBlob(canvasToTGA(renderSpec(doc), { alpha: true }), safeName() + '_spec.tga');
-    status('Paint + spec TGAs exported.', 'ok');
+    status('Paint + spec TGAs saved to your Downloads folder.' + tip, 'ok');
   } else {
-    status(`${doc.target === 'helmet' ? 'Helmet' : 'Suit'} paint TGA exported.`, 'ok');
+    status(`${doc.target === 'helmet' ? 'Helmet' : 'Suit'} paint TGA saved to your Downloads folder.` + tip, 'ok');
   }
 });
 
@@ -2981,7 +2985,7 @@ $('btn-get-mips').addEventListener('click', async () => {
       const f = await persist.readFileFromFolder(handle, n);
       if (f) downloadBlob(f, n);
     }
-    status(`Downloaded ${mips.length} MIP file(s) — upload the car_spec one to Trading Paints.`, 'ok');
+    status(`Copied ${mips.length} MIP file(s) to your Downloads — pick the car_spec one in Trading Paints' spec-map upload. The originals stay in your paints folder for the sim.`, 'ok');
   } catch (err) {
     status('MIP download failed: ' + err.message, 'err');
   }
