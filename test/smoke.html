@@ -4,7 +4,8 @@
 <script type="module">
 import { createDoc, createTextLayer, regenerateText, createFillLayer, fillPaintStyle,
          createImageLayer, createMaskedPatternLayer, renderPaint, renderSpec, serializeDoc, SIZE }
-  from './js/engine.js';
+  from '../js/engine.js';
+import { advise } from '../js/advisor.js';
 
 const lines = [];
 const ok = (name, cond) => lines.push((cond ? 'PASS' : 'FAIL') + ' ' + name);
@@ -54,6 +55,19 @@ try {
   const si = s.layers.find(l => l.name === 'logo');
   ok('serialize-curve', st.curve === -90);
   ok('serialize-fx', si.fx && si.fx.strokeW === 8);
+
+  // advisor: symptom queries route to the fixes knowledge base
+  const mdoc = createDoc();
+  mdoc.baseMaterial = 'matte';
+  const a1 = advise('My livery is muted how do I fix it', mdoc);
+  ok('advisor-muted', a1.title === 'Looks muted / washed out' && a1.tips.length >= 3);
+  ok('advisor-muted-names-matte', a1.tips[0].toLowerCase().includes('matte'));
+  const a2 = advise('chrome looks grey in the sim', mdoc);
+  ok('advisor-chrome', a2.title === 'Chrome looks grey / dead');
+  const a3 = advise('make it look aggressive', mdoc);
+  ok('advisor-look-still-works', a3.title === 'Aggressive / mean');
+  const a4 = advise("numbers can't be read at distance", mdoc);
+  ok('advisor-legibility', a4.title === 'Numbers / logos hard to read');
 } catch (err) {
   lines.push('THROW ' + err.message);
 }

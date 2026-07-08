@@ -6,7 +6,7 @@
 // finishes in use, layer makeup — so the tips are specific, not generic.
 // Everything runs client-side; nothing leaves the browser.
 
-import { MATERIALS } from './engine.js';
+import { MATERIALS, resolveParams } from './engine.js';
 
 // ---------- color helpers ----------
 
@@ -70,6 +70,9 @@ export function readContext(doc) {
   const finishes = new Set([doc.baseMaterial || 'gloss']);
   const accents = [];
   let visible = 0, patterns = 0, ghosts = 0, texts = 0, images = 0, fills = 0;
+  // material forensics: which layers actually scatter light / mute color
+  const roughLayers = [], metalLayers = [], lowClearLayers = [];
+  let multiplies = 0, tints = 0;
   for (const l of (doc.layers || [])) {
     if (l.visible === false) continue;
     visible++;
@@ -79,14 +82,22 @@ export function readContext(doc) {
     else if (l.type === 'image') images++;
     else if (l.type === 'fill') { fills++; if (l.color) accents.push(l.color); }
     if ((l.material || '') === 'ghost') ghosts++;
+    if (l.blend === 'multiply') multiplies++;
+    if (l.matParams?.tintAmt) tints++;
+    const p = resolveParams(l.material || 'gloss', l.matParams);
+    if (p.rough > 150) roughLayers.push(l.name || l.type);
+    if (p.met > 180) metalLayers.push(l.name || l.type);
+    if (p.clear < 120) lowClearLayers.push(l.name || l.type);
   }
+  const baseP = resolveParams(doc.baseMaterial || 'gloss', doc.baseMatParams);
   // best contrast between base and any accent color
   let accentContrast = 0;
   for (const a of accents) accentContrast = Math.max(accentContrast, contrastRatio(doc.baseColor, a));
   return {
-    doc, base, baseColor: doc.baseColor, baseMaterial: doc.baseMaterial || 'gloss',
+    doc, base, baseColor: doc.baseColor, baseMaterial: doc.baseMaterial || 'gloss', baseP,
     finishes, accents, accentContrast,
     counts: { visible, patterns, ghosts, texts, images, fills },
+    mats: { roughLayers, metalLayers, lowClearLayers, multiplies, tints },
     hasTemplate: !!doc.template,
   };
 }
@@ -256,6 +267,187 @@ const LOOKS = [
   },
 ];
 
+// ---------- the fixes: symptoms people report, diagnosed against the doc ----------
+// Same shape as LOOKS but framed as problem → material-level cure. Each one
+// leans on how the spec map actually works (R=metallic, G=roughness,
+// B=clearcoat) and names the offending layers when it can.
+
+const listSome = (arr) => arr.slice(0, 3).map((n) => `"${n}"`).join(', ') + (arr.length > 3 ? ` +${arr.length - 3} more` : '');
+
+const FIXES = [
+  {
+    id: 'muted',
+    label: 'Looks muted / washed out',
+    kind: 'fix',
+    keywords: ['muted', 'washed out', 'washed-out', 'dull', 'desaturat', 'faded', 'chalky', 'pale', 'lifeless', 'drab', 'pastel', 'not vibrant', 'colors pop', 'more pop', 'pop more', 'vibrant'],
+    summary: 'Muted color is almost always a materials problem, not a color problem — roughness and metallic both steal saturation.',
+    advise(ctx) {
+      const t = [];
+      if (ctx.mats.roughLayers.length || ctx.baseP.rough > 150) {
+        const who = ctx.baseP.rough > 150 ? `your ${ctx.baseMaterial} base coat` : listSome(ctx.mats.roughLayers);
+        t.push(`Prime suspect: high roughness on ${who}. Rough surfaces scatter light and read chalky. Switch to Gloss, or open the material's tuning and drag Roughness down toward ~40 — saturation comes back immediately.`);
+      } else {
+        t.push(`Your finishes aren't rough, so check saturation at the source: gloss keeps color juicy (roughness ~40, clearcoat 255). If a layer still looks flat, open its material tuning and confirm Roughness isn't cranked.`);
+      }
+      if (ctx.mats.metalLayers.length) {
+        t.push(`High metallic also desaturates: ${listSome(ctx.mats.metalLayers)} take their color from reflections, so under the showroom's warm light the hue drifts and dilutes. For pure vivid paint, keep Metallic near 0; if you want metal depth WITH color, use Candy — it's metallic that stays hue-locked.`);
+      }
+      if (ctx.mats.lowClearLayers.length || ctx.baseP.clear < 120) {
+        t.push(`Low clearcoat (blue channel) kills the wet look. iRacing wants it at 255 unless you're deliberately going matte — check ${ctx.baseP.clear < 120 ? 'the base coat' : listSome(ctx.mats.lowClearLayers)}.`);
+      }
+      if (ctx.base.chroma === 'muted') {
+        t.push(`The base color itself is low-saturation (${ctx.base.desc}). Materials can't add chroma that isn't there — push the base's saturation up, then let gloss do the rest.`);
+      }
+      if (ctx.mats.multiplies) t.push(`You have ${ctx.mats.multiplies} Multiply-blend layer(s) — multiply only darkens. If one sits over the whole sheet (weathering/shading), it's dragging everything down; lower its opacity or cut it.`);
+      if (ctx.mats.tints) t.push(`Tint washes desaturate too when the tint color is grayish — check the ${ctx.mats.tints} tinted layer(s).`);
+      t.push(`Sanity-check in Shine (L) and Studio: a gloss/candy livery that still looks muted on the flat sheet often looks perfect on curvature. Judge on the 3D proof, not the sheet.`);
+      return t;
+    },
+  },
+  {
+    id: 'toodark',
+    label: 'Too dark',
+    kind: 'fix',
+    keywords: ['too dark', 'dark and', 'darker than', 'gloomy', 'murky', 'can barely see', 'too black', 'brighten', 'lighten'],
+    summary: 'Darkness compounds: base value, multiply layers, and rough finishes all subtract light.',
+    advise(ctx) {
+      const t = [];
+      if (ctx.base.lum < 0.1) t.push(`Your base is ${ctx.base.desc} — start there. Even one notch lighter shifts the whole car; the sim's ambient light has nothing to bounce off near-black.`);
+      if (ctx.mats.multiplies) t.push(`${ctx.mats.multiplies} Multiply layer(s) are subtracting light on top. Swap shading layers to Soft light at reduced opacity — you keep the depth without the mud.`);
+      if (ctx.mats.roughLayers.length || ctx.baseP.rough > 150) t.push(`Matte finishes read a full step darker than gloss under track lighting because they don't return highlights. Glossing the same color visibly lifts it.`);
+      t.push(`Add a light-value element for range: a white/silver stripe or panel gives the eye a bright anchor and makes the dark read intentional instead of murky.`);
+      t.push(`Try a Screen-blend glow accent or a Ghost element over gloss — reflected highlights brighten a dark car without changing its color.`);
+      return t;
+    },
+  },
+  {
+    id: 'flat',
+    label: 'Looks flat / no depth',
+    kind: 'fix',
+    keywords: ['flat', 'no depth', 'boring', 'plain', 'lifeless', 'plastic', 'toy', 'cheap', 'one-dimensional', 'depth', 'bland', 'sticker'],
+    summary: 'Depth comes from finish CONTRAST — two materials on one color beat five colors on one material.',
+    advise(ctx) {
+      const t = [];
+      if (ctx.finishes.size <= 1) t.push(`Everything is ${[...ctx.finishes][0]} right now — that's why it reads like a wrap sticker. Give one zone a different finish of the same color: satin roof on a gloss body, or a gloss stripe across matte.`);
+      t.push(`Pearl and Glaze add lit-from-within depth that flat color can't. Glaze (validated in-sim) layers a pearl feel over existing artwork without muting it — perfect on top of a design you already like.`);
+      t.push(`Use spec stacking: set an overlapping layer's spec blend to Add and the finishes compound where they overlap — that's how you get a candy-over-metal glow on a hero panel.`);
+      t.push(`A Flake or Carbon panel adds micro-texture the eye reads as expensive. One panel, not the whole car.`);
+      t.push(`Judge depth on curvature — the flat sheet hides everything pearl/candy/flake do. Open Studio (sphere or door panel) and sweep Shine (L).`);
+      return t;
+    },
+  },
+  {
+    id: 'notshiny',
+    label: 'Not shiny in the sim',
+    kind: 'fix',
+    keywords: ['not shiny', "isn't shiny", 'no shine', 'no gloss', 'not glossy', 'not reflect', 'no reflection', 'wont shine', "won't shine", 'looks matte', 'shine in the sim', 'not wet'],
+    summary: 'Shine lives in the spec map: low roughness (G) + full clearcoat (B). If the sim ignores it, the spec map probably never made it there.',
+    advise(ctx) {
+      const t = [];
+      const rough = [];
+      if (ctx.baseP.rough > 100) rough.push('the base coat');
+      if (ctx.mats.roughLayers.length) rough.push(listSome(ctx.mats.roughLayers));
+      if (rough.length) t.push(`Roughness is the shine killer and it's elevated on ${rough.join(' and ')}. Gloss sits at ~40; drag it below 60 and keep Clearcoat at 255.`);
+      else t.push(`Your materials look glossy on paper — so the likely culprit is the spec map not reaching the sim. "Save to iRacing" writes car_spec_<id>.tga next to the paint; the showroom needs both.`);
+      t.push(`If you're running the livery through Trading Paints, remember TP needs the sim-generated .mip for the spec side — paint-only uploads come out uniformly semi-gloss. Save to iRacing → open the showroom once → Send to TP (it bundles the spec MIP).`);
+      if (ctx.doc.target !== 'car') t.push(`Heads-up: this project targets a ${ctx.doc.target} — iRacing doesn't support spec maps for helmets/suits at all, so finish control only exists on cars.`);
+      t.push(`Verify what you're shipping with Spec view (S): green = rough, blue = clearcoat. A shiny car's spec map looks predominantly blue with dark green.`);
+      return t;
+    },
+  },
+  {
+    id: 'tooshiny',
+    label: 'Too shiny / looks like plastic',
+    kind: 'fix',
+    keywords: ['too shiny', 'too glossy', 'plasticky', 'plastic', 'oily', 'greasy', 'too reflective', 'blinding', 'tone down the shine'],
+    summary: 'Uniform gloss reads as plastic — real paint varies. Pull roughness up selectively.',
+    advise(ctx) {
+      const t = [];
+      t.push(`Move the body to Satin (roughness ~120) and keep true Gloss only on graphics or a hero panel — the contrast makes the shine read as paint, not shrink-wrap.`);
+      t.push(`If it's the metallic elements blowing out, drop their Metallic value or raise Roughness slightly (chrome at rough 10 is a mirror; rough 40 is brushed jewelry).`);
+      t.push(`Clearcoat (blue channel) at 255 everywhere is correct per iRacing — control the plastic feel with Roughness, not clearcoat, so the paint still sits "under lacquer."`);
+      t.push(`Check in Studio's Neutral environment — the showroom's warm key exaggerates hotspots that look fine in Dusk/track light.`);
+      return t;
+    },
+  },
+  {
+    id: 'sparkle',
+    label: 'Flake / sparkle not showing',
+    kind: 'fix',
+    keywords: ['flake', 'sparkle', 'glitter', 'metal flake', 'no sparkle', "can't see the flake", 'flakes'],
+    summary: 'Flake is per-pixel spec texture — it needs density, curvature, moving light, and the spec map actually reaching the sim.',
+    advise(ctx) {
+      const t = [];
+      t.push(`Open the flake layer's material tuning: Density around 18–30 and Contrast near 100 make it obvious; the default is deliberately subtle. Bigger flake = higher density value.`);
+      t.push(`Flake only exists in the spec map, so it's invisible in plain paint view — preview with Shine (L) where the sweeping light makes it sparkle, or orbit it in Studio.`);
+      t.push(`It reads best on dark, saturated colors (the sparkle is bright metallic spikes — they vanish against white). Deep reds, blues, and black are flake's home turf.`);
+      t.push(`In the sim: flake needs the spec TGA (Save to iRacing) — and on Trading Paints it needs the .mip spec upload, or your flake never leaves your machine.`);
+      return t;
+    },
+  },
+  {
+    id: 'chromedull',
+    label: 'Chrome looks grey / dead',
+    kind: 'fix',
+    keywords: ['chrome looks', 'chrome is', 'chrome not', 'chrome dull', 'chrome grey', 'chrome gray', 'chrome flat', 'mirror'],
+    summary: 'Chrome has no color of its own — it is 100% reflected environment, so it lives or dies by what surrounds it.',
+    advise(ctx) {
+      const t = [];
+      t.push(`Chrome is metallic 255 / roughness 10 — pure mirror. On the flat sheet it just shows the paint color underneath; the effect only exists on curvature under an environment. Judge it ONLY in Studio or the sim showroom.`);
+      if (ctx.base.lightness === 'light') t.push(`Your base is ${ctx.base.desc} — chrome needs dark surrounds to have something to contrast against. Frame chrome elements with near-black panels or keylines.`);
+      t.push(`Make the chrome layer's paint color a light neutral grey (#c8c8cc) rather than white — pure white blows out the reflection highlights.`);
+      t.push(`If it's still grey in the sim, the spec map isn't loading (chrome without its spec data is just grey paint): Save to iRacing, and via Trading Paints upload the spec .mip.`);
+      return t;
+    },
+  },
+  {
+    id: 'pearldrift',
+    label: 'Pearl looks wrong / drifts yellow',
+    kind: 'fix',
+    keywords: ['pearl looks', 'pearl is', 'pearl not', 'pearl yellow', 'pearl warm', 'pearl white', 'pearl wrong', 'pearlescent'],
+    summary: "Pearl's color comes half from reflections — the showroom's warm light pulls it yellow, and the Tint is the steering wheel.",
+    advise(ctx) {
+      const t = [];
+      t.push(`The showroom key light is warm (~5500K), so high-metallic pearl drifts warm/yellow. Counter it with the layer's Tint: a cool blue-white tint at 15–30% pulls pearl back to neutral ice.`);
+      t.push(`Pearl over existing artwork mutes it — that's what Glaze is for (metallic 75 / rough 55 / clear 255, validated in-sim): pearl sheen without washing out the design underneath.`);
+      t.push(`Pearl is invisible on the flat sheet and weak on flat panels — it needs compound curves. Proof on Studio's sphere or door panel, and compare Showroom vs Neutral environments to separate the material from the lighting.`);
+      t.push(`If pearl reads as plain white in the sim, the spec map isn't arriving — same checklist as gloss: Save to iRacing, showroom once, spec .mip for Trading Paints.`);
+      return t;
+    },
+  },
+  {
+    id: 'simdiff',
+    label: 'Colors look different in the sim',
+    kind: 'fix',
+    keywords: ['different in the sim', 'different in sim', 'different in game', 'in-game', 'showroom looks', "doesn't match", 'does not match', 'color shift', 'colours are', 'colors are wrong', 'hue shift'],
+    summary: "The sim isn't showing your file wrong — it's lighting it. Warm light + material metallic are the two shifters.",
+    advise(ctx) {
+      const t = [];
+      t.push(`The iRacing showroom uses a warm key light, so everything drifts warm: whites go cream, blues dull, reds glow. Clearcoat's Studio "Showroom" environment mimics this — design against it, and use "Neutral" to see the un-lit truth.`);
+      if (ctx.mats.metalLayers.length) t.push(`Metallic layers (${listSome(ctx.mats.metalLayers)}) shift the most because reflections carry the environment's color. Drop Metallic for hue-critical elements (sponsor brand colors should be met 0, gloss).`);
+      t.push(`Counter a known drift with Tint: e.g. pearl going yellow → cool tint at ~20%. Tune, Save to iRacing, and check the actual showroom — Live Sync makes that loop a few seconds.`);
+      t.push(`Also confirm the sim is even loading your file and not a Trading Paints download — if you run the TP app, turn on TP Guard so your local save survives.`);
+      return t;
+    },
+  },
+  {
+    id: 'legibility',
+    label: 'Numbers / logos hard to read',
+    kind: 'fix',
+    keywords: ['hard to read', "can't read", 'cant read', 'be read', 'readab', 'illegible', 'legib', 'invisible', 'blends in', 'number', 'logo disappear', 'lost against', 'stand out more'],
+    summary: 'Legibility at track distance = value contrast + a separating edge, not size alone.',
+    advise(ctx) {
+      const t = [];
+      if (ctx.accents.length && ctx.accentContrast < 3) t.push(`Your accent-vs-base contrast is ~${ctx.accentContrast.toFixed(1)}:1 — that melts at 100 m. Aim for 4.5:1+; push the element lighter or darker rather than changing hue.`);
+      t.push(`Give numbers and logos an Effects outline (select the layer → Effects → Outline): a 6–12 px contour in the opposite value creates separation on any background — it's also stamped into the spec map so the edge survives every lighting angle.`);
+      t.push(`Park numbers on a dedicated plate: a white or black Fill behind them (Library has number plates/roundels). Race-control legibility is why real series mandate these.`);
+      t.push(`Avoid putting text over busy patterns — or knock the pattern's opacity down 30% inside a plate zone. Contrast of VALUE beats contrast of color: check by squinting or zooming the viewport way out.`);
+      t.push(`Keep finishes on text simple gloss — chrome/flake text sparkles but destroys reading distance.`);
+      return t;
+    },
+  },
+];
+
 // keep the finish glossary handy for "what does X finish do" style questions
 const FINISH_HELP = Object.fromEntries(Object.entries(MATERIALS).map(([k, m]) => [k, m.label]));
 
@@ -263,11 +455,14 @@ const FINISH_HELP = Object.fromEntries(Object.entries(MATERIALS).map(([k, m]) =>
 
 function matchLook(query) {
   const q = ` ${query.toLowerCase()} `;
+  // problem phrasing nudges the fixes ahead of the looks on close scores
+  const problemish = /fix|problem|wrong|why|how do i|how can i|too |not |isn't|is not|won't|wont|can't|cant|looks?\s/.test(q);
   let best = null, bestScore = 0, second = null;
-  for (const look of LOOKS) {
+  for (const look of [...LOOKS, ...FIXES]) {
     let score = 0;
     for (const kw of look.keywords) if (q.includes(kw)) score += kw.length > 4 ? 2 : 1;
     if (q.includes(look.id)) score += 2;
+    if (score > 0 && problemish && look.kind === 'fix') score += 1;
     if (score > bestScore) { second = best; best = look; bestScore = score; }
     else if (score > 0 && score >= bestScore - 1 && look !== best) second = look;
   }
@@ -285,7 +480,7 @@ export function advise(query, doc) {
     return {
       title: 'Tell me the vibe you want',
       contextLine: contextLine(ctx),
-      summary: `I couldn't pin down a specific look from that. Try describing the feeling — "aggressive", "clean and modern", "factory GT3", "murdered-out", "loud and colorful", "vintage", "elegant", or "sponsor car". Or tap a chip below.`,
+      summary: `I couldn't pin that down. Describe a look you want ("aggressive", "factory GT3", "murdered-out", "vintage") or a problem to fix ("my livery looks muted", "chrome looks grey", "not shiny in the sim", "numbers are hard to read"). Or tap a chip below.`,
       tips: [],
       issues,
     };
@@ -320,6 +515,9 @@ const CSS = `
 .advisor-chips{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px}
 .advisor-chip{border:1px solid var(--seam);background:var(--panel-raise);color:var(--ink);padding:6px 12px;border-radius:16px;font-size:13px;cursor:pointer;transition:.13s}
 .advisor-chip:hover{border-color:var(--cyan);color:var(--cyan)}
+.advisor-chip.fix{border-color:rgba(255,140,60,.35)}
+.advisor-chip.fix:hover{border-color:var(--orange);color:var(--orange)}
+.advisor-chip-head{font-family:var(--font-display);font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-faint);margin:2px 0 6px}
 .advisor-form{display:flex;gap:8px;margin-bottom:6px}
 .advisor-input{flex:1;background:var(--asphalt);border:1px solid var(--seam);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--font-ui)}
 .advisor-input:focus{outline:none;border-color:var(--cyan)}
@@ -372,10 +570,19 @@ export function initAdvisor(getDoc) {
   }
   panel.appendChild(chips);
 
+  panel.appendChild(el('div', 'advisor-chip-head', 'Fix a problem'));
+  const fixChips = el('div', 'advisor-chips');
+  for (const fix of FIXES) {
+    const c = el('button', 'advisor-chip fix', esc(fix.label));
+    c.onclick = () => { input.value = fix.label; run(); };
+    fixChips.appendChild(c);
+  }
+  panel.appendChild(fixChips);
+
   const form = el('form', 'advisor-form');
   const input = el('input', 'advisor-input');
   input.type = 'text';
-  input.placeholder = 'e.g. "make it look more aggressive"';
+  input.placeholder = 'e.g. "make it aggressive" or "my livery looks muted"';
   const ask = el('button', 'advisor-ask', 'Advise');
   ask.type = 'submit';
   form.appendChild(input); form.appendChild(ask);
