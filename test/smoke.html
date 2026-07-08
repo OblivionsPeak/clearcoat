@@ -6,6 +6,7 @@ import { createDoc, createTextLayer, regenerateText, createFillLayer, fillPaintS
          createImageLayer, createMaskedPatternLayer, renderPaint, renderSpec, serializeDoc, SIZE }
   from '../js/engine.js';
 import { advise } from '../js/advisor.js';
+import { specTexture, MATERIALS } from '../js/engine.js';
 
 const lines = [];
 const ok = (name, cond) => lines.push((cond ? 'PASS' : 'FAIL') + ' ' + name);
@@ -68,6 +69,14 @@ try {
   ok('advisor-look-still-works', a3.title === 'Aggressive / mean');
   const a4 = advise("numbers can't be read at distance", mdoc);
   ok('advisor-legibility', a4.title === 'Numbers / logos hard to read');
+
+  // glitter material: registered + generates a spec texture with chip variance
+  ok('glitter-material', MATERIALS.glitter && MATERIALS.glitter.tex === 'glitter');
+  const gt = specTexture('glitter', { met: 170, rough: 60, clear: 255, density: 30, scale: 4, contrast: 100 });
+  const gd = gt.getContext('2d').getImageData(0, 0, 256, 1).data;
+  let minMet = 255, maxMet = 0;
+  for (let i = 0; i < gd.length; i += 4) { minMet = Math.min(minMet, gd[i]); maxMet = Math.max(maxMet, gd[i]); }
+  ok('glitter-chips-vary', maxMet - minMet > 30); // chips spike metallic over the base
 } catch (err) {
   lines.push('THROW ' + err.message);
 }

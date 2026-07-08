@@ -374,11 +374,12 @@ const FIXES = [
     id: 'sparkle',
     label: 'Flake / sparkle not showing',
     kind: 'fix',
-    keywords: ['flake', 'sparkle', 'glitter', 'metal flake', 'no sparkle', "can't see the flake", 'flakes'],
-    summary: 'Flake is per-pixel spec texture — it needs density, curvature, moving light, and the spec map actually reaching the sim.',
+    keywords: ['flake', 'sparkle', 'glitter', 'metal flake', 'no sparkle', "can't see the flake", 'flakes', 'sparkly'],
+    summary: 'Flake and Glitter are per-pixel spec textures — they need density, curvature, moving light, and the spec map actually reaching the sim.',
     advise(ctx) {
       const t = [];
-      t.push(`Open the flake layer's material tuning: Density around 18–30 and Contrast near 100 make it obvious; the default is deliberately subtle. Bigger flake = higher density value.`);
+      t.push(`Open the layer's material tuning: Density around 18–30 and Contrast near 100 make it obvious; the default is deliberately subtle.`);
+      t.push(`If Flake still reads too fine, switch the layer to Glitter — same idea but multi-pixel chips, each flashing at its own angle. Its Size knob controls chip coarseness (4–8 px reads clearly at track distance).`);
       t.push(`Flake only exists in the spec map, so it's invisible in plain paint view — preview with Shine (L) where the sweeping light makes it sparkle, or orbit it in Studio.`);
       t.push(`It reads best on dark, saturated colors (the sparkle is bright metallic spikes — they vanish against white). Deep reds, blues, and black are flake's home turf.`);
       t.push(`In the sim: flake needs the spec TGA (Save to iRacing) — and on Trading Paints it needs the .mip spec upload, or your flake never leaves your machine.`);

@@ -23,6 +23,7 @@ export const MATERIALS = {
   // pearl over existing artwork without muting it — values validated in-sim
   glaze:    { label: 'Glaze',    met: 75,  rough: 55,  clear: 255 },
   flake:    { label: 'Flake',    tex: 'flake',   met: 160, rough: 45,  clear: 255, density: 18, contrast: 100 },
+  glitter:  { label: 'Glitter',  tex: 'glitter', met: 170, rough: 60,  clear: 255, density: 30, scale: 4, contrast: 100 },
   brushed:  { label: 'Brushed',  tex: 'brushed', met: 205, rough: 110, clear: 130, scale: 2,  contrast: 100 },
   carbon:   { label: 'Carbon',   tex: 'carbon',  met: 40,  rough: 85,  clear: 210, scale: 16, contrast: 100 },
   ghost:    { label: 'Ghost',    met: 255, rough: 10, clear: 255, ghost: true },
@@ -81,6 +82,27 @@ export function specTexture(key, p) {
       d[i + 2] = p.clear;
       d[i + 3] = 255;
     }
+  } else if (key === 'glitter') {
+    // coarse sparkle: multi-pixel chips (flake's loud cousin). Each chip
+    // spikes metallic and carries its OWN roughness, so different chips
+    // catch the light at different angles — the tumbling-glitter look.
+    ctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    const size = Math.max(2, Math.round(p.scale ?? 4));
+    const density = Math.max(1, Math.min(80, p.density ?? 30));
+    const count = Math.round((SIZE * SIZE * (density / 100)) / (size * size));
+    for (let i = 0; i < count; i++) {
+      const x = Math.floor(rand() * SIZE);
+      const y = Math.floor(rand() * SIZE);
+      const flash = rand() * k;                       // how hard this chip flashes
+      const met = clamp255(p.met + (255 - p.met) * (0.4 + 0.6 * flash));
+      const rough = clamp255(p.rough * (1 - 0.9 * flash) + rand() * 30);
+      const s = Math.max(1, Math.round(size * (0.7 + rand() * 0.6)));
+      ctx.fillStyle = `rgb(${met},${rough},${p.clear})`;
+      ctx.fillRect(x, y, s, s);
+    }
+    texCache.set(cacheKey, c);
+    return c; // drawn with fillRect — skip the ImageData path below
   } else if (key === 'brushed') {
     // grain bands of `scale` px plus per-pixel jitter in the roughness channel
     const band = Math.max(1, Math.round(p.scale ?? 2));
