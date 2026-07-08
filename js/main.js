@@ -2942,7 +2942,9 @@ $('btn-restore-original').addEventListener('click', async () => {
 });
 
 async function addTgaAsLayer(arrayBuffer, name) {
-  const canvas = tgaToCanvas(arrayBuffer);
+  // opaque: iRacing/TP paint alpha is sim data (decal masks), not
+  // transparency — honoring it would hide most of the livery
+  const canvas = tgaToCanvas(arrayBuffer, { opaque: true });
   const src = canvas.toDataURL('image/png');
   const img = await loadImage(src);
   const layer = createImageLayer(img, src, name);

@@ -6,7 +6,10 @@
 // Decode an uncompressed (type 2) or RLE (type 10) truecolor TGA into
 // top-left-origin RGBA bytes — enough to read back paints written by
 // iRacing/Trading Paints. Pure: no canvas, safe under node.
-export function decodeTGA(buf) {
+// `opaque` forces alpha to 255: iRacing/Trading Paints 32-bit car paints
+// use the alpha channel as sim data (decal masks / legacy shine), NOT
+// transparency — honoring it makes most of the livery invisible.
+export function decodeTGA(buf, { opaque = false } = {}) {
   const d = new DataView(buf);
   const idLen = d.getUint8(0);
   const cmapType = d.getUint8(1);
@@ -30,7 +33,7 @@ export function decodeTGA(buf) {
     flat[o++] = bytes[p + 2];               // R
     flat[o++] = bytes[p + 1];               // G
     flat[o++] = bytes[p];                   // B
-    flat[o++] = px === 4 ? bytes[p + 3] : 255;
+    flat[o++] = (px === 4 && !opaque) ? bytes[p + 3] : 255;
   };
   if (type === 2) {
     for (let i = 0; i < w * h; i++) { emit(); p += px; }
@@ -58,8 +61,8 @@ export function decodeTGA(buf) {
   return { width: w, height: h, rgba };
 }
 
-export function tgaToCanvas(buf) {
-  const { width, height, rgba } = decodeTGA(buf);
+export function tgaToCanvas(buf, opts) {
+  const { width, height, rgba } = decodeTGA(buf, opts);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;

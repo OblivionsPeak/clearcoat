@@ -136,3 +136,13 @@ test('decodeTGA rejects unsupported images', () => {
     /Unsupported TGA/,
   );
 });
+
+test('decodeTGA opaque option overrides 32-bit alpha (TP paints use alpha as sim data)', () => {
+  // one BGRA pixel: green with alpha 0 — like a TP sim-stamped paint region
+  const body = new Uint8Array([0, 255, 0, 0]);
+  const buf = concat(header({ type: 2, w: 1, h: 1, bpp: 32, descriptor: 0x28 }), body);
+  const honored = decodeTGA(buf);
+  assert.equal(honored.rgba[3], 0, 'default decode keeps the file alpha');
+  const opaque = decodeTGA(buf, { opaque: true });
+  assert.deepEqual([...opaque.rgba], [0, 255, 0, 255], 'opaque decode forces alpha 255');
+});
