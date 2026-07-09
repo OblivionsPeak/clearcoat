@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.41</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.42</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -139,6 +139,7 @@
         <span id="wand-tol-val" class="mono hud-readout" style="min-width:24px">30</span>
         <label class="tb-check" title="Instead of a material-only selection, repaint the selected color with the chosen one"><input type="checkbox" id="wand-recolor"> Recolor</label>
         <input type="color" id="wand-recolor-color" value="#1a6cff" title="Replacement color" style="width:26px;height:22px;border:1px solid var(--seam);border-radius:4px;background:var(--asphalt);padding:2px;cursor:pointer;" hidden>
+        <label class="tb-check" title="Shrink the selection edge by 2px so neighbouring selections on soft-edged artwork (AI camo, gradients) don't overlap and mute each other's materials"><input type="checkbox" id="wand-tight" checked> Tight</label>
         <label class="tb-check" title="Fill the selection with a tiling texture (e.g. a SimTex seamless export) instead of a material-only layer"><input type="checkbox" id="wand-pattern"> Pattern</label>
         <input id="file-wand-pattern" type="file" accept="image/*" hidden>
       </span>
@@ -245,6 +246,9 @@
 
       <label class="tb-check" style="margin-top:10px" title="Don't paint this layer's color — only stamp its material into the spec map. Use over an imported livery to give parts of the existing design a finish (pearl, candy, flake…) without repainting them.">
         <input type="checkbox" id="ins-spec-only"> Material only (don't paint)
+      </label>
+      <label class="tb-check" title="The mirror of Material only: paint this layer's color but DON'T stamp its material — the finish of the layers beneath survives untouched. Perfect for semi-transparent tint/blend layers over pearl, flake or candy.">
+        <input type="checkbox" id="ins-paint-only"> Paint only (keep finish below)
       </label>
 
       <div id="ins-text-section" hidden>

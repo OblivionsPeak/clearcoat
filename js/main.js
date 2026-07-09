@@ -591,7 +591,8 @@ function wandClick(p, global) {
   status('Selecting…');
   // give the status a frame to paint before the pixel crunch
   requestAnimationFrame(async () => {
-    const result = wandSelect(renderPaint(doc), p.x, p.y, tol, global);
+    const result = wandSelect(renderPaint(doc), p.x, p.y, tol, global,
+      $('wand-tight').checked ? 2 : 0);
     if (!result) { status('Nothing selected — try a higher tolerance.', 'err'); return; }
     try {
       const recolor = $('wand-recolor').checked;
@@ -1281,6 +1282,7 @@ function syncInspector() {
     $('ins-opacity').value = Math.round(sel.opacity * 100);
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
     $('ins-spec-only').checked = !!sel.specOnly;
+    $('ins-paint-only').checked = !!sel.paintOnly;
     $('ins-blend').value = BLEND_MODES[sel.blend] ? sel.blend : 'normal';
     // fill layers: color/shape/gradient pickers instead of image transforms
     $('ins-fill-row').hidden = sel.type !== 'fill';
@@ -1527,7 +1529,16 @@ for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale']
 $('ins-spec-only').addEventListener('change', () => {
   const sel = selectedLayer(); if (!sel) return;
   sel.specOnly = $('ins-spec-only').checked;
+  if (sel.specOnly && sel.paintOnly) { sel.paintOnly = false; $('ins-paint-only').checked = false; }
   markDirty();
+});
+$('ins-paint-only').addEventListener('change', () => {
+  const sel = selectedLayer(); if (!sel) return;
+  sel.paintOnly = $('ins-paint-only').checked;
+  // the two flags are opposites — both at once would delete the layer
+  if (sel.paintOnly && sel.specOnly) { sel.specOnly = false; $('ins-spec-only').checked = false; }
+  markDirty();
+  if (sel.paintOnly) status('Paint only — this layer now colors the livery without touching the finish beneath it.', 'ok');
 });
 $('ins-blend').addEventListener('change', () => {
   const sel = selectedLayer(); if (!sel) return;

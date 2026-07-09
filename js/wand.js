@@ -52,17 +52,47 @@ function colorMask(data, sx, sy, tolerance) {
   return { mask, count };
 }
 
+// binary erosion (4-neighbour): pulls the selection edge in by one pixel per
+// pass, so adjacent selections on soft-gradient artwork stop fighting over
+// the same boundary pixels (matte halos muting a pearl region, etc.)
+function erode(mask, passes) {
+  const w = SIZE, h = SIZE;
+  let cur = mask;
+  for (let n = 0; n < passes; n++) {
+    const next = new Uint8Array(cur);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = y * w + x;
+        if (!cur[p]) continue;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1
+            || !cur[p - 1] || !cur[p + 1] || !cur[p - w] || !cur[p + w]) {
+          next[p] = 0;
+        }
+      }
+    }
+    cur = next;
+  }
+  return cur;
+}
+
 // Returns { src (PNG dataURL of the white-on-transparent mask), count, color }
 // or null when nothing matched. paintCanvas is the 2048² composited paint.
-export function wandSelect(paintCanvas, x, y, tolerance, global) {
+// shrink: erosion passes (px) applied to the mask edge — 0 disables.
+export function wandSelect(paintCanvas, x, y, tolerance, global, shrink = 0) {
   const sx = Math.max(0, Math.min(SIZE - 1, Math.round(x)));
   const sy = Math.max(0, Math.min(SIZE - 1, Math.round(y)));
   const data = paintCanvas.getContext('2d').getImageData(0, 0, SIZE, SIZE).data;
 
-  const { mask, count } = global
+  let { mask, count } = global
     ? colorMask(data, sx, sy, tolerance)
     : floodMask(data, sx, sy, tolerance);
   if (!count) return null;
+  if (shrink > 0) {
+    mask = erode(mask, Math.min(6, shrink));
+    count = 0;
+    for (let p = 0; p < mask.length; p++) if (mask[p]) count++;
+    if (!count) return null;
+  }
 
   const i0 = (sy * SIZE + sx) * 4;
   const color = '#' + [data[i0], data[i0 + 1], data[i0 + 2]]

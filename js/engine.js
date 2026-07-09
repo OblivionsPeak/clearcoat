@@ -702,6 +702,9 @@ export function renderSpec(doc) {
   const sctx = scratch.getContext('2d');
   for (const layer of doc.layers) {
     if (!layer.visible) continue;
+    // paint-only layers tint the color map but never stamp the spec — the
+    // finish of whatever sits beneath them survives untouched
+    if (layer.paintOnly) continue;
     const mat = MATERIALS[layer.material] || MATERIALS.gloss;
     const p = resolveParams(layer.material, layer.matParams);
     // paint the layer's silhouette, then fill it with the material —
@@ -891,6 +894,7 @@ export function serializeDoc(doc) {
       matParams: l.matParams || null,
       specBlend: l.specBlend || 'replace',
       specOnly: !!l.specOnly,
+      paintOnly: !!l.paintOnly,
       fx: l.fx || null,
       color: l.color,
       shape: l.shape, fillType: l.fillType, color2: l.color2, gradAngle: l.gradAngle,
@@ -976,6 +980,7 @@ export async function deserializeDoc(data) {
           matParams: l.matParams || null,
           specBlend: l.specBlend || 'replace',
           specOnly: !!l.specOnly,
+          paintOnly: !!l.paintOnly,
           shape: l.shape || 'rect',
           fillType: l.fillType || 'solid',
           color2: l.color2 || '#101114',
@@ -994,6 +999,8 @@ export async function deserializeDoc(data) {
           blend: BLEND_MODES[l.blend] ? l.blend : 'normal',
           matParams: l.matParams || null,
           specBlend: l.specBlend || 'replace',
+          specOnly: !!l.specOnly,
+          paintOnly: !!l.paintOnly,
           img: null, src: l.src || null,
           text: l.text ?? 'TEXT', font: l.font || 'Arial Black',
           fontSize: l.fontSize ?? 160,
@@ -1025,6 +1032,7 @@ export async function deserializeDoc(data) {
         matParams: l.matParams || null,
         specBlend: l.specBlend || 'replace',
         specOnly: !!l.specOnly,
+        paintOnly: !!l.paintOnly,
         fx: normalizeFx(l.fx),
         img, src: l.src,
         x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
