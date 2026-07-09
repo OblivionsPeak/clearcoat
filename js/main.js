@@ -390,6 +390,15 @@ function draw() {
       for (const p of corners) {
         vctx.fillRect(p.x - HANDLE_PX / 2, p.y - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
       }
+      // mid-edge stretch handles (image/text only): scale one axis
+      if (!isRegionLayer(sel)) {
+        const s = HANDLE_PX - 3;
+        for (let i = 0; i < 4; i++) {
+          const a = corners[i], b = corners[(i + 1) % 4];
+          const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+          vctx.fillRect(mx - s / 2, my - s / 2, s, s);
+        }
+      }
     }
 
     // rotate handle — image layers only (regions stay axis-aligned)
@@ -492,7 +501,8 @@ function groupBBox() {
 
 function groupTransformStarts() {
   return selectedLayers().filter(l => !l.locked).map(l => ({
-    layer: l, x: l.x, y: l.y, scale: l.scale, rotation: l.rotation || 0,
+    layer: l, x: l.x, y: l.y, scale: l.scale, scaleY: l.scaleY ?? null,
+    rotation: l.rotation || 0,
     rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
   }));
 }
@@ -535,6 +545,16 @@ function handleAt(sx, sy) {
   for (let i = 0; i < 4; i++) {
     if (Math.abs(sx - corners[i].x) <= HANDLE_PX && Math.abs(sy - corners[i].y) <= HANDLE_PX) {
       return { type: isRegionLayer(sel) ? 'region' : 'scale', corner: i };
+    }
+  }
+  // mid-edge stretch handles (image/text only): 0 top, 1 right, 2 bottom, 3 left
+  if (!isRegionLayer(sel)) {
+    for (let i = 0; i < 4; i++) {
+      const a = corners[i], b = corners[(i + 1) % 4];
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if (Math.abs(sx - mx) <= HANDLE_PX && Math.abs(sy - my) <= HANDLE_PX) {
+        return { type: 'stretch', edge: i };
+      }
     }
   }
   return null;
@@ -697,11 +717,21 @@ viewport.addEventListener('pointerdown', (e) => {
         const anchor = corners[(handle.corner + 2) % 4];
         drag = { mode: 'region', layer: sel, anchor };
       }
+    } else if (handle.type === 'stretch') {
+      // one-axis stretch: work in the layer's unscaled local space so
+      // rotation/skew don't bend the axis being dragged
+      const m0 = new DOMMatrix()
+        .translate(sel.x, sel.y)
+        .rotate(sel.rotation || 0)
+        .skewX(sel.skewX || 0)
+        .skewY(sel.skewY || 0);
+      drag = { mode: 'stretch', layer: sel, edge: handle.edge, inv: m0.inverse() };
     } else {
       drag = {
         mode: 'scale', layer: sel,
         startDist: Math.hypot(p.x - sel.x, p.y - sel.y),
         startScale: sel.scale,
+        startScaleY: sel.scaleY ?? null,
       };
     }
     startLayerDrag(new Set([sel.id]));
@@ -832,10 +862,26 @@ viewport.addEventListener('pointermove', (e) => {
     case 'scale': {
       const dist = Math.hypot(p.x - drag.layer.x, p.y - drag.layer.y);
       if (drag.startDist > 1) {
-        drag.layer.scale = Math.max(0.01, drag.startScale * dist / drag.startDist);
+        const f = dist / drag.startDist;
+        drag.layer.scale = Math.max(0.01, drag.startScale * f);
+        // stretched layers keep their aspect through a uniform corner drag
+        if (drag.startScaleY != null) drag.layer.scaleY = Math.max(0.01, drag.startScaleY * f);
         syncInspector();
         markDirty();
       }
+      break;
+    }
+    case 'stretch': {
+      const l = drag.layer;
+      const lp = drag.inv.transformPoint(new DOMPoint(p.x, p.y));
+      if (drag.edge === 1 || drag.edge === 3) {        // right/left: X axis
+        if (l.scaleY == null) l.scaleY = l.scale;      // unlink so Y holds still
+        l.scale = Math.max(0.01, Math.abs(lp.x) / (l.img.width / 2));
+      } else {                                          // top/bottom: Y axis
+        l.scaleY = Math.max(0.01, Math.abs(lp.y) / (l.img.height / 2));
+      }
+      syncInspector();
+      markDirty();
       break;
     }
     case 'pattern-zoom': {
@@ -873,6 +919,7 @@ viewport.addEventListener('pointermove', (e) => {
           if (l.type === 'pattern') l.scale = Math.max(0.01, s.scale * f); // tiles ride along
         } else {
           l.scale = Math.max(0.01, s.scale * f);
+          if (s.scaleY != null) l.scaleY = Math.max(0.01, s.scaleY * f);
           l.x = Math.round(drag.cx + (s.x - drag.cx) * f);
           l.y = Math.round(drag.cy + (s.y - drag.cy) * f);
         }
@@ -1339,14 +1386,17 @@ function syncInspector() {
       $('ins-fx-glow').value = fx.glow || 0;
       $('ins-fx-glow-color').value = fx.glowColor || '#ffffff';
     }
-    for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
+    for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-scy', 'scaleY'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
       const el = $(id);
       if (document.activeElement !== el) {
-        el.value = prop === 'scale' ? sel[prop].toFixed(3) : Math.round((sel[prop] || 0) * 10) / 10;
+        el.value = prop === 'scale' ? sel[prop].toFixed(3)
+          : prop === 'scaleY' ? (sel.scaleY ?? sel.scale).toFixed(3)
+          : Math.round((sel[prop] || 0) * 10) / 10;
       }
     }
-    // skew only makes sense for image-like layers (patterns/fills are regions)
-    $('ins-skx-wrap').hidden = $('ins-sky-wrap').hidden = sel.type !== 'image' && sel.type !== 'text';
+    // skew/stretch only make sense for image-like layers (patterns/fills are regions)
+    $('ins-skx-wrap').hidden = $('ins-sky-wrap').hidden = $('ins-scy-wrap').hidden =
+      sel.type !== 'image' && sel.type !== 'text';
     $('ins-mirror').disabled = !doc.regionMap;
   }
   if (isBase) syncBaseColorFields();
@@ -1515,12 +1565,17 @@ $('ins-opacity').addEventListener('input', () => {
   $('ins-opacity-val').textContent = $('ins-opacity').value + '%';
   markDirty();
 });
-for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
+for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-scy', 'scaleY'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
   $(id).addEventListener('input', () => {
     const sel = selectedLayer(); if (!sel) return;
     const v = parseFloat($(id).value);
     if (!Number.isFinite(v)) return;
     if (prop === 'scale') sel[prop] = Math.max(0.01, v);
+    else if (prop === 'scaleY') {
+      sel.scaleY = Math.max(0.01, v);
+      // typing the X value back in relinks the axes (uniform again)
+      if (Math.abs(sel.scaleY - sel.scale) < 0.0005) sel.scaleY = null;
+    }
     else if (prop === 'skewX' || prop === 'skewY') sel[prop] = Math.max(-80, Math.min(80, v));
     else sel[prop] = v;
     markDirty();

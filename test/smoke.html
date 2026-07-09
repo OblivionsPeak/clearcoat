@@ -3,7 +3,8 @@
 <body><pre id="out">running…</pre>
 <script type="module">
 import { createDoc, createTextLayer, regenerateText, createFillLayer, fillPaintStyle,
-         createImageLayer, createMaskedPatternLayer, renderPaint, renderSpec, serializeDoc, SIZE }
+         createImageLayer, createMaskedPatternLayer, renderPaint, renderSpec, serializeDoc,
+         layerMatrix, SIZE }
   from '../js/engine.js';
 import { advise } from '../js/advisor.js';
 import { specTexture, MATERIALS } from '../js/engine.js';
@@ -50,12 +51,27 @@ try {
   ok('render-paint-with-fx', paint && paint.width === SIZE);
   ok('render-spec-with-fx', spec && spec.width === SIZE);
 
+  // non-uniform stretch: scaleY flows through layerMatrix and serializes;
+  // null scaleY must keep following scale (uniform, back-compat)
+  const stretchy = createImageLayer(tile, tile.toDataURL(), 'flag');
+  stretchy.scale = 2; stretchy.scaleY = 0.5;
+  const mtx = layerMatrix(stretchy);
+  const right = mtx.transformPoint(new DOMPoint(16, 0));
+  const down = mtx.transformPoint(new DOMPoint(0, 16));
+  ok('stretch-matrix', Math.abs((right.x - stretchy.x) - 32) < 0.01 &&
+                       Math.abs((down.y - stretchy.y) - 8) < 0.01);
+  const uniDown = layerMatrix(il).transformPoint(new DOMPoint(0, 16));
+  ok('stretch-null-follows-scale', Math.abs((uniDown.y - il.y) - 16 * il.scale) < 0.01);
+  doc.layers.push(stretchy);
+
   // serialization round-trip fields
   const s = serializeDoc(doc);
   const st = s.layers.find(l => l.type === 'text');
   const si = s.layers.find(l => l.name === 'logo');
   ok('serialize-curve', st.curve === -90);
   ok('serialize-fx', si.fx && si.fx.strokeW === 8);
+  const sf = s.layers.find(l => l.name === 'flag');
+  ok('serialize-scaley', sf.scaleY === 0.5 && si.scaleY === null);
 
   // advisor: symptom queries route to the fixes knowledge base
   const mdoc = createDoc();

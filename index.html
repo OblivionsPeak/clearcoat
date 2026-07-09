@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.42</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.43</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -331,7 +331,8 @@
       <div class="xform-grid">
         <label>X <input id="ins-x" type="number" step="1" class="mono"></label>
         <label>Y <input id="ins-y" type="number" step="1" class="mono"></label>
-        <label>Scale <input id="ins-scale" type="number" step="0.01" min="0.01" class="mono"></label>
+        <label title="Horizontal scale (uniform scale for patterns/fills)">Scale <input id="ins-scale" type="number" step="0.01" min="0.01" class="mono"></label>
+        <label id="ins-scy-wrap" title="Vertical scale — set it different from Scale to stretch; drag a mid-edge handle on the canvas to do the same">Scale Y <input id="ins-scy" type="number" step="0.01" min="0.01" class="mono"></label>
         <label>Rotate <input id="ins-rot" type="number" step="1" class="mono"></label>
         <label id="ins-skx-wrap">Skew X <input id="ins-skx" type="number" step="1" min="-80" max="80" class="mono"></label>
         <label id="ins-sky-wrap">Skew Y <input id="ins-sky" type="number" step="1" min="-80" max="80" class="mono"></label>

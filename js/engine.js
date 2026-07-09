@@ -174,6 +174,7 @@ export function createImageLayer(img, src, name) {
     x: SIZE / 2,
     y: SIZE / 2,
     scale: fit,
+    scaleY: null,  // non-uniform Y scale; null = follow scale (uniform)
     rotation: 0,   // degrees
     skewX: 0,      // degrees
     skewY: 0,
@@ -183,14 +184,15 @@ export function createImageLayer(img, src, name) {
 }
 
 // full local→doc transform for an image layer (skew sits between rotation
-// and scale so its angles act on the unscaled axes)
+// and scale so its angles act on the unscaled axes); scaleY = null means
+// "follow scale" so old projects and uniform layers behave identically
 export function layerMatrix(l) {
   return new DOMMatrix()
     .translate(l.x, l.y)
     .rotate(l.rotation)
     .skewX(l.skewX || 0)
     .skewY(l.skewY || 0)
-    .scale(l.scale * (l.flipH ? -1 : 1), l.scale * (l.flipV ? -1 : 1));
+    .scale(l.scale * (l.flipH ? -1 : 1), (l.scaleY ?? l.scale) * (l.flipV ? -1 : 1));
 }
 
 export const TEXT_FONTS = ['Arial Black', 'Impact', 'Georgia', 'Courier New', 'Verdana', 'Trebuchet MS'];
@@ -236,6 +238,7 @@ export function createTextLayer() {
     x: SIZE / 2,
     y: SIZE / 2,
     scale: 1,
+    scaleY: null,
     rotation: 0,
     skewX: 0,
     skewY: 0,
@@ -904,7 +907,7 @@ export function serializeDoc(doc) {
       textColor: l.textColor, outlineColor: l.outlineColor, outlineWidth: l.outlineWidth,
       italic: l.italic, letterSpacing: l.letterSpacing,
       curve: l.curve || 0,
-      x: l.x, y: l.y, scale: l.scale, rotation: l.rotation,
+      x: l.x, y: l.y, scale: l.scale, scaleY: l.scaleY ?? null, rotation: l.rotation,
       skewX: l.skewX || 0, skewY: l.skewY || 0,
       flipH: l.flipH, flipV: l.flipV,
       rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
@@ -1011,7 +1014,8 @@ export async function deserializeDoc(data) {
           curve: l.curve ?? 0,
           fx: normalizeFx(l.fx),
           x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
-          scale: l.scale ?? 1, rotation: l.rotation ?? 0,
+          scale: l.scale ?? 1, scaleY: Number.isFinite(l.scaleY) ? l.scaleY : null,
+          rotation: l.rotation ?? 0,
           skewX: l.skewX ?? 0, skewY: l.skewY ?? 0,
           flipH: !!l.flipH, flipV: !!l.flipV,
         };
