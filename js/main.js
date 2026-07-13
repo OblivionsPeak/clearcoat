@@ -1544,6 +1544,22 @@ function buildMaterialGrid() {
       if (!target) return;
       target.material = key;
       target.matParams = null; // switching material starts from its preset
+      if (key === 'vanta') {
+        // Vanta only reads as a void over pure black paint — any albedo
+        // above #000 still catches diffuse light in the sim
+        if (selectedId === 'base') {
+          doc.baseColor = '#000000';
+          $('basecoat-color').value = '#000000';
+        } else {
+          const sel = selectedLayer();
+          if (sel && typeof sel.color === 'string') {
+            sel.color = '#000000';
+            if (sel.type === 'text') regenerateText(sel);
+          }
+        }
+        syncInspector();
+        status('Vanta applied — paint forced to black. Deepest black the sim can render.', 'ok');
+      }
       rebuildLayerList();
       syncMaterialGrid();
       markDirty();

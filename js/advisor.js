@@ -183,7 +183,7 @@ const LOOKS = [
   {
     id: 'stealth',
     label: 'Stealth / murdered-out',
-    keywords: ['stealth', 'murdered', 'blackout', 'black out', 'all black', 'dark', 'tonal', 'ghost', 'subtle', 'monochrome', 'shadow'],
+    keywords: ['stealth', 'murdered', 'blackout', 'black out', 'all black', 'dark', 'tonal', 'ghost', 'subtle', 'monochrome', 'shadow', 'vanta', 'vantablack', 'void', 'light trap', 'darkest'],
     summary: 'All-black done right is about finish contrast, not color contrast.',
     advise(ctx) {
       const t = [];
@@ -191,6 +191,7 @@ const LOOKS = [
       t.push(`Ghost layers are your best friend here — put logos/numbers as Ghost so they exist only in reflections. Preview with Shine and Studio.`);
       t.push(`A single carbon-weave panel adds texture without adding color. A whisper of dark candy (deep red/blue) over black reads almost black until the light hits it.`);
       t.push(`Keep clearcoat high on the glossy elements so they separate from the matte ones — that separation IS the design.`);
+      t.push(`For the full void: the Vanta finish (max roughness, zero clearcoat, forced #000 paint) is the deepest black the sim renders — panel lines vanish. Use it as the base and let gloss or Ghost elements float on the nothing.`);
       return t;
     },
   },

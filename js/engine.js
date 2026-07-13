@@ -15,6 +15,9 @@ export const SIZE = 2048;
 export const MATERIALS = {
   gloss:    { label: 'Gloss',    met: 0,   rough: 40,  clear: 255 },
   matte:    { label: 'Matte',    met: 0,   rough: 230, clear: 60  },
+  // light-trap black: max roughness + zero clearcoat kills specular and
+  // reflections entirely; applying it also forces the paint to #000000
+  vanta:    { label: 'Vanta',    met: 0,   rough: 255, clear: 0   },
   satin:    { label: 'Satin',    met: 0,   rough: 120, clear: 150 },
   metallic: { label: 'Metallic', met: 180, rough: 70,  clear: 255 },
   chrome:   { label: 'Chrome',   met: 255, rough: 10,  clear: 255 },
