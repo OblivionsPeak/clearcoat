@@ -1289,6 +1289,7 @@ function duplicateLayer(layer) {
     name: layer.name + ' copy',
     locked: false, // a fresh copy is for editing
     matParams: layer.matParams ? { ...layer.matParams } : null,
+    lumSpec: layer.lumSpec ? { ...layer.lumSpec } : null,
   };
   if (isRegionLayer(layer)) { copy.rx = layer.rx + 40; copy.ry = layer.ry + 40; }
   else { copy.x = layer.x + 40; copy.y = layer.y + 40; }
@@ -1478,6 +1479,24 @@ function syncMaterialTune() {
   $('tune-stack-row').hidden = selectedId === 'base';
   const sel = selectedLayer();
   if (sel) $('tune-stack').value = sel.specBlend || 'replace';
+  // weathering reads the layer's paint — a flat base coat has no lights/darks
+  $('tune-lum-row').hidden = selectedId === 'base';
+  if (sel) {
+    const amt = sel.lumSpec?.amt || 0;
+    $('tune-lumamt').value = amt;
+    if (document.activeElement !== $('tune-lumamt-n')) $('tune-lumamt-n').value = amt;
+    $('tune-luminv').classList.toggle('active', !!sel.lumSpec?.invert);
+  }
+}
+
+function setLumSpec(raw) {
+  const sel = selectedLayer();
+  if (!sel) return;
+  const v = parseInt(raw, 10);
+  if (!Number.isFinite(v)) return;
+  const amt = Math.max(0, Math.min(100, v));
+  sel.lumSpec = amt > 0 ? { amt, invert: !!sel.lumSpec?.invert } : null;
+  markDirty();
 }
 
 function setTuneParam(key, raw, min, max) {
@@ -1515,6 +1534,17 @@ $('tune-tintamt').addEventListener('input', () => setTuneParam('tintAmt', $('tun
 $('tune-tintamt-n').addEventListener('input', () => setTuneParam('tintAmt', $('tune-tintamt-n').value, 0, 100));
 $('tune-tintamt-n').addEventListener('blur', () => syncMaterialTune());
 
+$('tune-lumamt').addEventListener('input', () => setLumSpec($('tune-lumamt').value));
+$('tune-lumamt-n').addEventListener('input', () => setLumSpec($('tune-lumamt-n').value));
+$('tune-lumamt-n').addEventListener('blur', () => syncMaterialTune());
+$('tune-luminv').addEventListener('click', () => {
+  const sel = selectedLayer();
+  if (!sel || !sel.lumSpec) return; // invert is meaningless until Weather > 0
+  sel.lumSpec = { ...sel.lumSpec, invert: !sel.lumSpec.invert };
+  syncMaterialTune();
+  markDirty();
+});
+
 $('tune-stack').addEventListener('change', () => {
   const sel = selectedLayer();
   if (!sel) return;
@@ -1527,7 +1557,7 @@ $('tune-reset').addEventListener('click', () => {
   if (!target) return;
   target.matParams = null;
   const sel = selectedLayer();
-  if (sel) sel.specBlend = 'replace';
+  if (sel) { sel.specBlend = 'replace'; sel.lumSpec = null; }
   syncMaterialGrid();
   markDirty();
 });

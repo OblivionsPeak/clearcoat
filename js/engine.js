@@ -46,6 +46,22 @@ export function resolveParams(materialKey, matParams) {
   return { ...defaultParams(materialKey), ...(matParams || {}) };
 }
 
+// ---------- luminance-driven spec (weathering) ----------
+// Per-pixel finish derived from the layer's PAINT luminance, so a weathering
+// pattern (verdigris, rust, salt patina) bakes rough oxide where it's dark
+// and the layer's own material where bright metal shows through. amt 0-100
+// blends from flat material (0) to the full oxide swing (100); invert makes
+// the BRIGHT end weather instead.
+const LUM_OXIDE = { met: 0, rough: 235, clear: 30 };
+export function lumSpecChannels(lum, p, invert, amt) {
+  const w = (invert ? lum : 1 - lum) * (amt / 100);
+  return {
+    met: Math.round(p.met + (LUM_OXIDE.met - p.met) * w),
+    rough: Math.round(p.rough + (LUM_OXIDE.rough - p.rough) * w),
+    clear: Math.round(p.clear + (LUM_OXIDE.clear - p.clear) * w),
+  };
+}
+
 // ---------- procedural spec micro-textures ----------
 
 function mulberry32(seed) {
@@ -717,15 +733,35 @@ export function renderSpec(doc) {
     // flat channel values, or a procedural micro-texture for tex materials
     sctx.clearRect(0, 0, SIZE, SIZE);
     drawLayer(sctx, layer, true); // silhouette pass — stroke fx included, shadow/glow not
-    sctx.save();
-    sctx.globalCompositeOperation = 'source-in';
-    if (mat.tex) {
-      sctx.drawImage(specTexture(mat.tex, p), 0, 0);
+    if (layer.lumSpec && layer.lumSpec.amt > 0) {
+      // weathered: spec follows the paint's lights and darks — mask from the
+      // silhouette pass so shadow/glow fx still never stamp the spec
+      const mask = sctx.getImageData(0, 0, SIZE, SIZE).data;
+      sctx.clearRect(0, 0, SIZE, SIZE);
+      drawLayer(sctx, layer, false);
+      applyTint(sctx, layer);
+      const img = sctx.getImageData(0, 0, SIZE, SIZE);
+      const d = img.data;
+      const { amt, invert } = layer.lumSpec;
+      for (let i = 0; i < d.length; i += 4) {
+        const a = mask[i + 3];
+        if (!a) { d[i + 3] = 0; continue; }
+        const lum = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+        const c = lumSpecChannels(lum, p, !!invert, amt);
+        d[i] = c.met; d[i + 1] = c.rough; d[i + 2] = c.clear; d[i + 3] = a;
+      }
+      sctx.putImageData(img, 0, 0);
     } else {
-      sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
-      sctx.fillRect(0, 0, SIZE, SIZE);
+      sctx.save();
+      sctx.globalCompositeOperation = 'source-in';
+      if (mat.tex) {
+        sctx.drawImage(specTexture(mat.tex, p), 0, 0);
+      } else {
+        sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
+        sctx.fillRect(0, 0, SIZE, SIZE);
+      }
+      sctx.restore();
     }
-    sctx.restore();
     // spec stacking: Replace overwrites, Add brightens channels where layers
     // overlap (compound coats), Multiply darkens
     ctx.save();
@@ -901,6 +937,7 @@ export function serializeDoc(doc) {
       specBlend: l.specBlend || 'replace',
       specOnly: !!l.specOnly,
       paintOnly: !!l.paintOnly,
+      lumSpec: l.lumSpec || null,
       fx: l.fx || null,
       color: l.color,
       shape: l.shape, fillType: l.fillType, color2: l.color2, gradAngle: l.gradAngle,
@@ -925,6 +962,13 @@ export function loadImage(src) {
     img.onerror = () => reject(new Error('Could not load image'));
     img.src = src;
   });
+}
+
+// restore a saved lumSpec block — amt 0 means the feature is off (null)
+function normalizeLumSpec(ls) {
+  if (!ls || typeof ls !== 'object') return null;
+  const amt = Math.max(0, Math.min(100, ls.amt ?? 0));
+  return amt > 0 ? { amt, invert: !!ls.invert } : null;
 }
 
 // restore a saved fx block, coercing missing sub-fields to the UI defaults
@@ -987,6 +1031,7 @@ export async function deserializeDoc(data) {
           specBlend: l.specBlend || 'replace',
           specOnly: !!l.specOnly,
           paintOnly: !!l.paintOnly,
+          lumSpec: normalizeLumSpec(l.lumSpec),
           shape: l.shape || 'rect',
           fillType: l.fillType || 'solid',
           color2: l.color2 || '#101114',
@@ -1007,6 +1052,7 @@ export async function deserializeDoc(data) {
           specBlend: l.specBlend || 'replace',
           specOnly: !!l.specOnly,
           paintOnly: !!l.paintOnly,
+          lumSpec: normalizeLumSpec(l.lumSpec),
           img: null, src: l.src || null,
           text: l.text ?? 'TEXT', font: l.font || 'Arial Black',
           fontSize: l.fontSize ?? 160,
@@ -1040,10 +1086,12 @@ export async function deserializeDoc(data) {
         specBlend: l.specBlend || 'replace',
         specOnly: !!l.specOnly,
         paintOnly: !!l.paintOnly,
+        lumSpec: normalizeLumSpec(l.lumSpec),
         fx: normalizeFx(l.fx),
         img, src: l.src,
         x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
-        scale: l.scale ?? 1, rotation: l.rotation ?? 0,
+        scale: l.scale ?? 1, scaleY: Number.isFinite(l.scaleY) ? l.scaleY : null,
+        rotation: l.rotation ?? 0,
         skewX: l.skewX ?? 0, skewY: l.skewY ?? 0,
         flipH: !!l.flipH, flipV: !!l.flipV,
         rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,

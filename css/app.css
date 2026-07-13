@@ -209,6 +209,7 @@ input  { font-family: inherit; }
 .sm-btn.wide { flex: 1; }
 .sm-btn.icon { padding: 5px 8px; }
 .sm-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
+.sm-btn.active { color: var(--ink); border-color: var(--orange); }
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 
 .template-row { display: flex; gap: 6px; }

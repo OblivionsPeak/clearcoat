@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.44</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.45</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -365,6 +365,7 @@
             <option value="multiply">Multiply</option>
           </select>
         </div>
+        <div class="slider-row" id="tune-lum-row"><label for="tune-lumamt" title="Weathered finish: spec follows this layer's paint — dark pixels bake rough oxide, bright pixels get the material above. Made for patina/rust patterns. Inv flips which end weathers">Weather</label><input id="tune-lumamt" type="range" min="0" max="100" value="0"><input id="tune-lumamt-n" type="number" class="tune-num mono" min="0" max="100" value="0"><button id="tune-luminv" class="sm-btn" title="Invert: bright areas weather instead of dark">Inv</button></div>
       </div>
       <p class="hint">Materials are baked into the spec map — toggle <b>Spec view</b> to inspect it, or <b>Shine</b> to watch the finish react to light. Tuned values save with the project; verify in the iRacing showroom.</p>
     </section>

@@ -196,6 +196,19 @@ const LOOKS = [
     },
   },
   {
+    id: 'weathered',
+    label: 'Weathered / patina',
+    keywords: ['patina', 'weathered', 'rust', 'rusty', 'oxidized', 'oxidised', 'verdigris', 'aged', 'worn', 'battle-worn', 'distressed', 'grunge', 'corroded', 'barn find'],
+    summary: 'Real weathering is finish variation, not just a dirty texture — oxide is dull, worn-through metal is shiny.',
+    advise(ctx) {
+      const t = [];
+      t.push(`Bring in a weathering pattern (SimTex verdigris_patina, weathered_rust, salt_flat_patina) as a Pattern layer, then push its Weather slider up in Fine-tune — dark pixels bake rough oxide into the spec while bright pixels keep the layer's material, so the shine lines up with the paint automatically.`);
+      t.push(`Set the layer's material to Metallic or Chrome first: the material is what the BRIGHT worn-through areas get. Hit Inv if the pattern's highlights are the corroded part instead.`);
+      t.push(`Keep the weathering off logos and numbers — pristine sponsor decals over a decayed body reads intentional; weathered everything reads muddy.`);
+      return t;
+    },
+  },
+  {
     id: 'loud',
     label: 'Loud / high-visibility',
     keywords: ['loud', 'bright', 'visib', 'bold', 'vibrant', 'colorful', 'flashy', 'eye-catching', 'pop', 'neon', 'stand out', 'fun', 'wild', 'crazy'],

@@ -20,6 +20,7 @@ const {
   mixHex,
   resolveParams,
   defaultParams,
+  lumSpecChannels,
 } = await import('../js/engine.js');
 
 // Layers built by hand (factory functions for image/text need real canvas).
@@ -109,4 +110,55 @@ test('mixHex interpolates channels', () => {
 test('resolveParams overlays matParams on material defaults', () => {
   assert.deepEqual(defaultParams('gloss'), { met: 0, rough: 40, clear: 255 });
   assert.deepEqual(resolveParams('gloss', { rough: 99 }), { met: 0, rough: 99, clear: 255 });
+});
+
+// ---------- luminance-driven spec (weathering) ----------
+
+test('lumSpecChannels: amt 0 is a no-op, full amt swings dark pixels to oxide', () => {
+  const chrome = { met: 255, rough: 10, clear: 255 };
+  // amt 0 — flat material regardless of luminance
+  assert.deepEqual(lumSpecChannels(0, chrome, false, 0), chrome);
+  assert.deepEqual(lumSpecChannels(1, chrome, false, 0), chrome);
+  // amt 100 — bright pixels keep the material, dark pixels go full oxide
+  assert.deepEqual(lumSpecChannels(1, chrome, false, 100), chrome);
+  assert.deepEqual(lumSpecChannels(0, chrome, false, 100), { met: 0, rough: 235, clear: 30 });
+});
+
+test('lumSpecChannels: invert weathers the bright end instead', () => {
+  const chrome = { met: 255, rough: 10, clear: 255 };
+  assert.deepEqual(lumSpecChannels(1, chrome, true, 100), { met: 0, rough: 235, clear: 30 });
+  assert.deepEqual(lumSpecChannels(0, chrome, true, 100), chrome);
+});
+
+test('lumSpec serializes and round-trips; amt 0 and legacy saves normalize to null', async () => {
+  const doc = createDoc();
+  doc.layers.push({ ...createFillLayer('#8a5a2b'), lumSpec: { amt: 70, invert: true } });
+  const out = serializeDoc(doc);
+  assert.deepEqual(out.layers[0].lumSpec, { amt: 70, invert: true });
+
+  const back = await deserializeDoc({
+    format: 'clearcoat/1',
+    layers: [
+      { type: 'fill', color: '#8a5a2b', lumSpec: { amt: 70, invert: true } },
+      { type: 'fill', color: '#8a5a2b', lumSpec: { amt: 0, invert: true } },
+      { type: 'fill', color: '#8a5a2b' }, // pre-feature save
+      { type: 'image', src: 'data:x', lumSpec: { amt: 250 } }, // clamped
+    ],
+  });
+  assert.deepEqual(back.layers[0].lumSpec, { amt: 70, invert: true });
+  assert.equal(back.layers[1].lumSpec, null);
+  assert.equal(back.layers[2].lumSpec, null);
+  assert.deepEqual(back.layers[3].lumSpec, { amt: 100, invert: false });
+});
+
+test('deserializeDoc restores scaleY on image layers (stretch survived reload)', async () => {
+  const doc = await deserializeDoc({
+    format: 'clearcoat/1',
+    layers: [
+      { type: 'image', src: 'data:x', scale: 1, scaleY: 2.5 },
+      { type: 'image', src: 'data:x', scale: 1 }, // uniform — stays null
+    ],
+  });
+  assert.equal(doc.layers[0].scaleY, 2.5);
+  assert.equal(doc.layers[1].scaleY, null);
 });

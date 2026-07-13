@@ -51,6 +51,23 @@ try {
   ok('render-paint-with-fx', paint && paint.width === SIZE);
   ok('render-spec-with-fx', spec && spec.width === SIZE);
 
+  // luminance-driven spec: dark paint bakes oxide, bright paint keeps the material
+  const wdoc = createDoc();
+  const wtile = document.createElement('canvas'); wtile.width = wtile.height = SIZE;
+  const wctx = wtile.getContext('2d');
+  wctx.fillStyle = '#000'; wctx.fillRect(0, 0, SIZE / 2, SIZE);
+  wctx.fillStyle = '#fff'; wctx.fillRect(SIZE / 2, 0, SIZE / 2, SIZE);
+  const wl = createImageLayer(wtile, wtile.toDataURL(), 'weathered');
+  wl.scale = 1; // factory fits imports to half the sheet — cover it fully
+  wl.material = 'chrome';
+  wl.lumSpec = { amt: 100, invert: false };
+  wdoc.layers.push(wl);
+  const wspec = renderSpec(wdoc).getContext('2d').getImageData(0, 0, SIZE, SIZE).data;
+  const at = (x, y) => { const i = (y * SIZE + x) * 4; return [wspec[i], wspec[i + 1], wspec[i + 2]]; };
+  const dark = at(200, 1024), bright = at(1800, 1024);
+  ok('lumspec-dark-is-oxide', dark[0] === 0 && dark[1] === 235 && dark[2] === 30);
+  ok('lumspec-bright-is-material', bright[0] === 255 && bright[1] === 10 && bright[2] === 255);
+
   // non-uniform stretch: scaleY flows through layerMatrix and serializes;
   // null scaleY must keep following scale (uniform, back-compat)
   const stretchy = createImageLayer(tile, tile.toDataURL(), 'flag');
