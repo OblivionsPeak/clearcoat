@@ -6,8 +6,9 @@ import {
   renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
   buildDragCache, renderPaintWithDrag,
   serializeDoc, deserializeDoc, loadImage,
-  templateOverlay, defaultParams, resolveParams, mixHex,
+  templateOverlay, defaultParams, resolveParams, mixHex, drawLayer,
 } from './engine.js';
+import { detectPalette, splitByPalette } from './separate.js';
 import { canvasToTGA, tgaToCanvas } from './tga.js';
 import { psdToTemplate } from './psd.js';
 import { renderBall, layerAlbedo } from './shaderball.js';
@@ -656,6 +657,51 @@ function wandClick(p, global) {
     }
   });
 }
+
+// ---------- color separation ----------
+// Split the selected image/pattern layer into one layer per dominant color.
+// Each split layer keeps its original pixels (AA and shading survive), so
+// recoloring is the existing Tint wash and materials apply per color.
+$('ins-split-colors').addEventListener('click', () => {
+  const sel = selectedLayer();
+  if (!sel || (sel.type !== 'image' && sel.type !== 'pattern')) return;
+  status('Detecting colors…');
+  requestAnimationFrame(() => {
+    try {
+      const flat = document.createElement('canvas');
+      flat.width = flat.height = SIZE;
+      const fctx = flat.getContext('2d');
+      drawLayer(fctx, sel, false); // doc-space raster, fx and transform included
+      const img = fctx.getImageData(0, 0, SIZE, SIZE);
+      const palette = detectPalette(img.data);
+      if (palette.length < 2) {
+        status('Only one dominant color found — nothing to split.', 'err');
+        return;
+      }
+      const parts = splitByPalette(img.data, palette);
+      const at = doc.layers.indexOf(sel);
+      const added = [];
+      for (const part of parts) { // largest coverage first → bottom of the stack
+        const c = document.createElement('canvas');
+        c.width = c.height = SIZE;
+        c.getContext('2d').putImageData(new ImageData(part.data, SIZE, SIZE), 0, 0);
+        const pct = (part.count / (SIZE * SIZE) * 100).toFixed(1);
+        const layer = createImageLayer(c, c.toDataURL('image/png'), `${part.color} (${pct}%)`);
+        layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = 1;
+        layer.material = sel.material;
+        added.push(layer);
+      }
+      sel.visible = false; // keep the original underneath as a safety net
+      doc.layers.splice(at + 1, 0, ...added);
+      selectLayer(added[added.length - 1].id);
+      rebuildLayerList();
+      markDirty();
+      status(`Split into ${added.length} color layers — original hidden beneath. Recolor via Tint, or give each its own material.`, 'ok');
+    } catch (err) {
+      status('Split failed: ' + err.message, 'err');
+    }
+  });
+});
 
 viewport.addEventListener('pointerdown', (e) => {
   viewport.setPointerCapture(e.pointerId);
@@ -1373,6 +1419,7 @@ function syncInspector() {
       $('ins-text-curve-val').textContent = (sel.curve || 0) + '°';
     }
     // effects: raster layers only (image + text)
+    $('ins-split-row').hidden = sel.type !== 'image' && sel.type !== 'pattern';
     const hasFxUI = sel.type === 'image' || sel.type === 'text';
     $('ins-fx-section').hidden = !hasFxUI;
     if (hasFxUI) {

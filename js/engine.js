@@ -534,7 +534,7 @@ function drawLayerContent(ctx, layer) {
   }
 }
 
-function drawLayer(ctx, layer, forSpec = false) {
+export function drawLayer(ctx, layer, forSpec = false) {
   // layer effects apply only to raster layers (image/text). Stroke changes
   // the design silhouette so it renders in both paint and spec passes;
   // shadow and glow are paint-only cosmetics.

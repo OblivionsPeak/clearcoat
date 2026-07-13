@@ -6,7 +6,7 @@
 // the reload that activates it. If VERSION doesn't change, returning users
 // keep being served the old cached shell.
 
-const VERSION = 'v0.45';
+const VERSION = 'v0.46';
 const CACHE = 'clearcoat-' + VERSION;
 
 // app shell — every path here must exist in the repo
@@ -23,6 +23,7 @@ const PRECACHE = [
   './js/persist.js',
   './js/psd.js',
   './js/regions.js',
+  './js/separate.js',
   './js/shaderball.js',
   './js/studio.js',
   './js/tga.js',

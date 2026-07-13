@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.45</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.46</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -343,6 +343,9 @@
         <button id="ins-mirror" class="sm-btn" title="Duplicate this layer mirrored onto the partner panel — needs a region map with the layer's center inside a mirrored region" disabled>Mirror</button>
         <button id="ins-duplicate" class="sm-btn" title="Duplicate layer (Ctrl+D)">Duplicate</button>
         <button id="ins-delete" class="sm-btn danger" title="Delete layer (Del)">Delete</button>
+      </div>
+      <div class="btn-row" id="ins-split-row" hidden>
+        <button id="ins-split-colors" class="sm-btn wide" title="Detect this layer's dominant colors and split it into one layer per color — each independently recolorable (Tint) and materialable. The original layer is hidden, not deleted">Split colors → layers</button>
       </div>
     </section>
 
