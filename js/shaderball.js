@@ -56,6 +56,7 @@ export function renderBall(canvas, materialKey, albedoHex, params = null) {
   const spec = specSample(materialKey, params || resolveParams(materialKey, null));
   const albedo = hexToRgb(albedoHex);
   const ghost = !!MATERIALS[materialKey].ghost;
+  const neon = materialKey === 'neon';
   const R = BALL / 2 - 1;
 
   for (let y = 0; y < BALL; y++) {
@@ -81,6 +82,12 @@ export function renderBall(canvas, materialKey, albedoHex, params = null) {
       ];
 
       let r = 0, g = 0, b = 0;
+      // neon is self-lit: strong albedo-colored emission that fades toward
+      // the rim, so the ball reads as glowing rather than merely glossy
+      if (neon) {
+        const em = 0.85 * (0.55 + 0.45 * nz);
+        r += alb[0] * em; g += alb[1] * em; b += alb[2] * em;
+      }
       for (const [light, kDiff, kSpec] of [[L1, 0.7, 1.0], [L2, 0.18, 0.35]]) {
         const ndl = Math.max(0, nz * light[2] + nx * light[0] + ny * light[1]);
         // Blinn half vector with view = (0,0,1)

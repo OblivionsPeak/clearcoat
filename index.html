@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.46</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.47</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -325,6 +325,11 @@
           <input id="ins-fx-glow" type="range" min="0" max="60" value="0">
           <input id="ins-fx-glow-color" type="color" value="#ffffff" title="Glow color" aria-label="Glow color">
         </div>
+        <div class="slider-row">
+          <label for="ins-fx-neon" title="Tube-light halo: additive colored bloom + white-hot core — paint only, baked into the color map">Neon</label>
+          <input id="ins-fx-neon" type="range" min="0" max="60" value="0">
+          <input id="ins-fx-neon-color" type="color" value="#39ff14" title="Neon color" aria-label="Neon color">
+        </div>
       </div>
 
       <h3 class="sub-title">Transform</h3>
@@ -360,6 +365,7 @@
         <div class="slider-row"><label for="tune-density">Density</label><input id="tune-density" type="range" min="1" max="60"><input id="tune-density-n" type="number" class="tune-num mono" min="1" max="60"></div>
         <div class="slider-row"><label for="tune-scale">Scale</label><input id="tune-scale" type="range" min="1" max="64"><input id="tune-scale-n" type="number" class="tune-num mono" min="1" max="64"></div>
         <div class="slider-row"><label for="tune-contrast">Contrast</label><input id="tune-contrast" type="range" min="0" max="200"><input id="tune-contrast-n" type="number" class="tune-num mono" min="0" max="200"></div>
+        <div class="slider-row"><label for="tune-bloom" title="Neon halo radius baked into the paint map (0 = recipe only, no halo)">Bloom</label><input id="tune-bloom" type="range" min="0" max="60"><input id="tune-bloom-n" type="number" class="tune-num mono" min="0" max="60"></div>
         <div class="slider-row"><label for="tune-tint" title="Color wash over this layer's paint — metallic finishes color their reflections from the paint, so this shifts what pearl/candy/flake read as">Tint</label><input id="tune-tint" type="color" value="#ffffff"><input id="tune-tintamt" type="range" min="0" max="100"><input id="tune-tintamt-n" type="number" class="tune-num mono" min="0" max="100"></div>
         <div class="slider-row" id="tune-stack-row"><label for="tune-stack" title="How this layer's spec stamps over what's beneath: Replace overwrites, Add compounds coats (e.g. stacked pearl), Multiply darkens">Stack</label>
           <select id="tune-stack" class="tune-select">

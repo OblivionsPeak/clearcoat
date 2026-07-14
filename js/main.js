@@ -1433,6 +1433,9 @@ function syncInspector() {
       if (document.activeElement !== $('ins-fx-sdy')) $('ins-fx-sdy').value = fx.shadowDY ?? 8;
       $('ins-fx-glow').value = fx.glow || 0;
       $('ins-fx-glow-color').value = fx.glowColor || '#ffffff';
+      $('ins-fx-neon').value = fx.neon || 0;
+      $('ins-fx-neon-color').value = fx.neonColor
+        || sel.textColor || sel.color || '#39ff14';
     }
     for (const [id, prop] of [['ins-x', 'x'], ['ins-y', 'y'], ['ins-scale', 'scale'], ['ins-scy', 'scaleY'], ['ins-rot', 'rotation'], ['ins-skx', 'skewX'], ['ins-sky', 'skewY']]) {
       const el = $(id);
@@ -1505,7 +1508,7 @@ function syncMaterialGrid() {
   syncMaterialTune();
 }
 
-const TUNE_KEYS = ['met', 'rough', 'clear', 'density', 'scale', 'contrast'];
+const TUNE_KEYS = ['met', 'rough', 'clear', 'density', 'scale', 'contrast', 'bloom'];
 
 function syncMaterialTune() {
   const target = matTarget();
@@ -2147,9 +2150,10 @@ function setFx(patch) {
     strokeW: 0, strokeColor: '#000000',
     shadow: 0, shadowDX: 8, shadowDY: 8, shadowColor: '#000000',
     glow: 0, glowColor: '#ffffff',
+    neon: 0, neonColor: '#39ff14',
     ...(sel.fx || {}), ...patch,
   };
-  if (!sel.fx.strokeW && !sel.fx.shadow && !sel.fx.glow) sel.fx = null;
+  if (!sel.fx.strokeW && !sel.fx.shadow && !sel.fx.glow && !sel.fx.neon) sel.fx = null;
   syncInspector();
   markDirty();
 }
@@ -2159,6 +2163,8 @@ $('ins-fx-shadow').addEventListener('input', () => setFx({ shadow: parseInt($('i
 $('ins-fx-shadow-color').addEventListener('input', () => setFx({ shadowColor: $('ins-fx-shadow-color').value }));
 $('ins-fx-glow').addEventListener('input', () => setFx({ glow: parseInt($('ins-fx-glow').value, 10) || 0 }));
 $('ins-fx-glow-color').addEventListener('input', () => setFx({ glowColor: $('ins-fx-glow-color').value }));
+$('ins-fx-neon').addEventListener('input', () => setFx({ neon: parseInt($('ins-fx-neon').value, 10) || 0 }));
+$('ins-fx-neon-color').addEventListener('input', () => setFx({ neonColor: $('ins-fx-neon-color').value }));
 for (const [id, key] of [['ins-fx-sdx', 'shadowDX'], ['ins-fx-sdy', 'shadowDY']]) {
   $(id).addEventListener('input', () => {
     const v = parseInt($(id).value, 10);

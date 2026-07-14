@@ -25,6 +25,10 @@ export const MATERIALS = {
   pearl:    { label: 'Pearl',    met: 190, rough: 60,  clear: 255 },
   // pearl over existing artwork without muting it — values validated in-sim
   glaze:    { label: 'Glaze',    met: 75,  rough: 55,  clear: 255 },
+  // emissive-look paint: iRacing has no emissive channel, so neon = zero-metal
+  // hot gloss (keeps color pure and bright) + a self-colored halo baked into
+  // the PAINT map automatically (bloom = halo radius, tunable per layer)
+  neon:     { label: 'Neon',     met: 0,   rough: 15,  clear: 255, bloom: 26 },
   flake:    { label: 'Flake',    tex: 'flake',   met: 160, rough: 45,  clear: 255, density: 18, contrast: 100 },
   glitter:  { label: 'Glitter',  tex: 'glitter', met: 170, rough: 60,  clear: 255, density: 30, scale: 4, contrast: 100 },
   brushed:  { label: 'Brushed',  tex: 'brushed', met: 205, rough: 110, clear: 130, scale: 2,  contrast: 100 },
@@ -39,6 +43,7 @@ export function defaultParams(key) {
   if (m.density !== undefined) p.density = m.density;
   if (m.scale !== undefined) p.scale = m.scale;
   if (m.contrast !== undefined) p.contrast = m.contrast;
+  if (m.bloom !== undefined) p.bloom = m.bloom;
   return p;
 }
 
@@ -539,14 +544,22 @@ export function drawLayer(ctx, layer, forSpec = false) {
   // the design silhouette so it renders in both paint and spec passes;
   // shadow and glow are paint-only cosmetics.
   const fx = layer.fx;
-  const hasImgFx = fx && layer.img && (layer.type === 'image' || layer.type === 'text');
+  const isRaster = layer.img && (layer.type === 'image' || layer.type === 'text');
+  const hasImgFx = fx && isRaster;
   const doStroke = hasImgFx && fx.strokeW > 0;
   const doShadow = hasImgFx && !forSpec && fx.shadow > 0;
   const doGlow = hasImgFx && !forSpec && fx.glow > 0;
+  // neon halo: from the fx slider, or implied by the Neon material itself
+  // (bloom matParam). Paint-only — the sim spec map has no emissive channel.
+  const neonAmt = !forSpec && isRaster
+    ? Math.max(0, Math.min(60, (fx && fx.neon > 0 ? fx.neon
+        : layer.material === 'neon' ? (resolveParams('neon', layer.matParams).bloom ?? 26)
+        : 0)))
+    : 0;
   ctx.save();
   ctx.globalAlpha = layer.opacity;
   ctx.globalCompositeOperation = (BLEND_MODES[layer.blend] || BLEND_MODES.normal).op;
-  if (!doStroke && !doShadow && !doGlow) {
+  if (!doStroke && !doShadow && !doGlow && !neonAmt) {
     drawLayerContent(ctx, layer);
     ctx.restore();
     return;
@@ -573,6 +586,22 @@ export function drawLayer(ctx, layer, forSpec = false) {
     ctx.shadowOffsetX = SIZE; // zero net offset — glow sits behind the layer
     ctx.shadowOffsetY = 0;
     for (let i = 0; i < 3; i++) ctx.drawImage(fxScratch, -SIZE, 0); // stamped for intensity
+    ctx.restore();
+  }
+  if (neonAmt) {
+    // tube-light look: wide additive halo in the neon color, then a tight
+    // white-hot core. 'lighter' compositing is what sells the emissive read.
+    const color = (fx && fx.neonColor) || layer.textColor || layer.color || '#39ff14';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = neonAmt * 2;
+    ctx.shadowOffsetX = SIZE;
+    ctx.shadowOffsetY = 0;
+    for (let i = 0; i < 4; i++) ctx.drawImage(fxScratch, -SIZE, 0);
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = Math.max(1, neonAmt * 0.4);
+    for (let i = 0; i < 2; i++) ctx.drawImage(fxScratch, -SIZE, 0);
     ctx.restore();
   }
   if (doStroke) {
