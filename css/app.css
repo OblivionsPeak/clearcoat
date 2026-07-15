@@ -426,6 +426,37 @@ input  { font-family: inherit; }
 
 /* ============ STUDIO (3D material proofing) ============ */
 
+#showroom-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, .82);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 30;
+}
+.showroom-box {
+  width: min(1100px, 92vw);
+  background: rgba(21, 23, 28, .97);
+  border: 1px solid var(--seam);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#showroom-canvas {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 6px;
+  display: block;
+}
+#showroom-title {
+  flex: 1;
+  background: var(--panel-raise);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 7px 10px;
+}
+
 #studio-panel {
   position: absolute;
   top: 0; right: 0; bottom: 0;

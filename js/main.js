@@ -13,6 +13,7 @@ import { canvasToTGA, tgaToCanvas } from './tga.js';
 import { psdToTemplate } from './psd.js';
 import { renderBall, layerAlbedo } from './shaderball.js';
 import { lightSweepSupported, lightSweepFrame } from './lightsweep.js';
+import { showroomSupported, playShowroom } from './showroom.js';
 import { studioSupported, openStudio, closeStudio, studioCanvas, studioSetShape, studioSetEnv } from './studio.js';
 import * as persist from './persist.js';
 import { LIBRARY, libraryItemToLayerSource } from './library.js';
@@ -3376,6 +3377,60 @@ window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceHeld = fa
 window.addEventListener('resize', requestRender);
 
 // ---------- boot ----------
+
+// ── Showroom: cinematic reveal videos ────────────────────────────────────────
+let showroomRun = null;
+
+function showroomTitle() {
+  return $('showroom-title').value.trim() || 'My Livery';
+}
+
+function runShowroom(record) {
+  if (showroomRun) showroomRun.cancel();
+  $('showroom-status').textContent = record ? 'recording…' : 'previewing…';
+  $('showroom-record').disabled = record;
+  showroomRun = playShowroom(
+    $('showroom-canvas'), renderPaint(doc), renderSpec(doc),
+    showroomTitle(), record,
+    () => {
+      $('showroom-status').textContent = record ? 'saving…' : 'done — Replay or Record & save';
+      $('showroom-record').disabled = false;
+    });
+  if (record) {
+    showroomRun.blob.then((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = showroomTitle().replace(/[^\w\- ]+/g, '').replace(/\s+/g, '-').toLowerCase()
+        + '-reveal.webm';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      $('showroom-status').textContent = 'saved — drop the .webm straight into Discord';
+      status('Showroom reveal saved.', 'ok');
+    });
+  }
+}
+
+$('btn-showroom').addEventListener('click', () => {
+  if (!showroomSupported()) {
+    status('Showroom needs WebGL and MediaRecorder — this browser lacks one of them.', 'danger');
+    return;
+  }
+  $('showroom-overlay').hidden = false;
+  runShowroom(false);
+});
+$('showroom-replay').addEventListener('click', () => runShowroom(false));
+$('showroom-record').addEventListener('click', () => runShowroom(true));
+$('showroom-close').addEventListener('click', () => {
+  if (showroomRun) showroomRun.cancel();
+  $('showroom-overlay').hidden = true;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('showroom-overlay').hidden) {
+    if (showroomRun) showroomRun.cancel();
+    $('showroom-overlay').hidden = true;
+  }
+});
 
 (async function boot() {
   buildMaterialGrid();

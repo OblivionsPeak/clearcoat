@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.47</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.48</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -147,12 +147,28 @@
       <button id="btn-spec-view" class="hud-btn toggle" title="Preview the generated spec map (S)">Spec view</button>
       <button id="btn-shine-view" class="hud-btn toggle" title="Sweep a light across the livery to preview finishes — gloss flashes, flake sparkles, ghost layers appear (L)">Shine</button>
       <button id="btn-studio-view" class="hud-btn toggle" title="Studio — proof your paint + spec maps on curved 3D geometry under showroom lighting; pearl, candy, flake and chrome only read truthfully on curvature">Studio</button>
+      <button id="btn-showroom" class="hud-btn" title="Showroom — cinematic reveal video of this livery (spotlight sweep reads your real spec maps), records a Discord-ready WebM">Reveal</button>
       <button id="btn-regions-view" class="hud-btn toggle" title="Show the region map's rectangles and panel names over the sheet" disabled>Regions</button>
       <span class="hud-sep"></span>
       <button id="btn-annotate" class="hud-btn toggle warn" title="Annotate mode — drag rectangles over the sheet to label panels and record mirror pairs, building a region map for this car">Annotate</button>
       <span class="hud-sep"></span>
       <button id="btn-advisor" class="hud-btn" title="Livery Advisor — describe the look you want, get changes to make (100% local, no AI keys)">✨ Advisor</button>
       <button id="btn-help" class="hud-btn" title="How Clearcoat works + shortcuts (F1)">?</button>
+    </div>
+    <div id="showroom-overlay" hidden>
+      <div class="showroom-box">
+        <div class="studio-head">
+          <span class="studio-title">Showroom</span>
+          <span class="studio-sub" id="showroom-status">previewing…</span>
+          <button id="showroom-close" class="sm-btn icon" title="Close (Esc)">✕</button>
+        </div>
+        <canvas id="showroom-canvas"></canvas>
+        <div class="studio-row">
+          <input id="showroom-title" type="text" placeholder="Title card text (e.g. team / car name)" maxlength="48">
+          <button id="showroom-replay" class="sm-btn">Replay</button>
+          <button id="showroom-record" class="sm-btn primary" title="Play the reveal once more while recording, then download the WebM">Record &amp; save</button>
+        </div>
+      </div>
     </div>
     <div id="studio-panel" hidden>
       <div class="studio-head">

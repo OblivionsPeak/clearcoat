@@ -19,6 +19,9 @@ precision mediump float;
 uniform sampler2D uPaint;
 uniform sampler2D uSpec;
 uniform float uTime;
+uniform float uOverride;   // 1.0 = use uLightPos/uAmbient (showroom mode)
+uniform vec3 uLightPos;
+uniform float uAmbient;    // showroom ambient floor, 0..1
 varying vec2 vUV;
 
 void main() {
@@ -31,7 +34,7 @@ void main() {
   // light sweeps the sheet on a 3:2 Lissajous loop, ~6 s period
   float t = uTime * 6.2831853 / 6.0;
   vec2 lightXY = vec2(0.5 + 0.46 * sin(t * 1.5), 0.5 + 0.46 * sin(t + 1.3));
-  vec3 lightPos = vec3(lightXY, 0.35);
+  vec3 lightPos = mix(vec3(lightXY, 0.35), uLightPos, uOverride);
 
   vec3 toLight = lightPos - vec3(vUV, 0.0);
   float dist = length(toLight);
@@ -51,7 +54,11 @@ void main() {
   vec3 specular = specColor * pow(NdotH, shininess)
                 * specStrength * (1.0 + shininess * 0.012) * atten * NdotL;
 
-  vec3 diffuse = albedo * (0.45 + NdotL * atten * 0.65) * (1.0 - 0.5 * metallic);
+  // sweep mode keeps its bright base; showroom darkens to uAmbient so the
+  // spotlight genuinely REVEALS the design out of darkness
+  float base = mix(0.45, 0.04 + 0.96 * uAmbient, uOverride);
+  float pool = mix(0.65, 1.15 * (1.0 - uAmbient * 0.6), uOverride);
+  vec3 diffuse = albedo * (base + NdotL * atten * pool) * (1.0 - 0.5 * metallic);
 
   vec3 color = diffuse + specular;
   color = color / (1.0 + color * 0.15);   // gentle tonemap to avoid blowout
@@ -132,6 +139,9 @@ function initState(width, height) {
   return {
     canvas, gl, texPaint, texSpec,
     uTime: gl.getUniformLocation(prog, 'uTime'),
+    uOverride: gl.getUniformLocation(prog, 'uOverride'),
+    uLightPos: gl.getUniformLocation(prog, 'uLightPos'),
+    uAmbient: gl.getUniformLocation(prog, 'uAmbient'),
     uploaded: false,
   };
 }
@@ -158,6 +168,27 @@ export function lightSweepFrame(paintCanvas, specCanvas, timeSeconds, texturesCh
     if (texturesChanged || !state.uploaded) uploadTextures(paintCanvas, specCanvas);
     const gl = state.gl;
     gl.uniform1f(state.uTime, timeSeconds);
+    gl.uniform1f(state.uOverride, 0.0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return state.canvas;
+  } catch (err) {
+    failed = true;
+    console.error('lightsweep: disabled after failure —', err);
+    return null;
+  }
+}
+
+// Showroom variant: explicit light position (UV space + height) and ambient
+// floor, for choreographed reveals rather than the looping sweep.
+export function lightFrameAt(paintCanvas, specCanvas, lightXYZ, ambient, texturesChanged) {
+  if (failed || !lightSweepSupported()) return null;
+  try {
+    if (!state) state = initState(paintCanvas.width, paintCanvas.height);
+    if (texturesChanged || !state.uploaded) uploadTextures(paintCanvas, specCanvas);
+    const gl = state.gl;
+    gl.uniform1f(state.uOverride, 1.0);
+    gl.uniform3f(state.uLightPos, lightXYZ[0], lightXYZ[1], lightXYZ[2]);
+    gl.uniform1f(state.uAmbient, ambient);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return state.canvas;
   } catch (err) {
