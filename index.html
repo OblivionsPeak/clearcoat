@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.48</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.49</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -106,6 +106,7 @@
         <span class="title-actions">
           <button id="btn-add-image" class="sm-btn" title="Add an image layer (logo, decal, artwork)">+ Image</button>
           <button id="btn-add-pattern" class="sm-btn" title="Add a seamless texture as a tiling fill over a resizable region">+ Pattern</button>
+          <button id="btn-add-texture" class="sm-btn" title="Pick from a built-in library of seamless materials — carbon, camo, metals, marble — inserted as a tiling pattern layer">+ Textures</button>
           <button id="btn-add-fill" class="sm-btn" title="Add a solid-color material patch — a resizable rectangle with its own color, material, and tuning (e.g. a pearl panel)">+ Fill</button>
           <button id="btn-add-text" class="sm-btn" title="Add a text layer — driver name, car number, sponsor wordmark">+ Text</button>
           <button id="btn-add-library" class="sm-btn" title="Insert a ready-made racing graphic — roundels, stripes, flames — then recolor it with the material Tint">+ Library</button>
@@ -518,6 +519,16 @@
     </h2>
     <p class="hint" style="margin-top:0">Click a graphic to insert it as an image layer, then recolor it with the material <b>Tint</b> in the inspector.</p>
     <div id="library-grid" class="library-grid"></div>
+  </div>
+</div>
+
+<div id="texture-modal" hidden>
+  <div class="library-panel">
+    <h2 class="panel-title">Texture library
+      <span class="title-actions"><button id="texture-close" class="sm-btn icon" title="Close (Esc)">✕</button></span>
+    </h2>
+    <p class="hint" style="margin-top:0">Seamless materials generated locally. Click one to drop it in as a tiling <b>pattern</b> layer — corner handles resize the coverage region, Ctrl+drag or the Scale field resizes the tile.</p>
+    <div id="texture-grid" class="library-grid tex-grid"></div>
   </div>
 </div>
 

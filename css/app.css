@@ -702,6 +702,29 @@ input  { font-family: inherit; }
 }
 .library-item:hover .library-name { color: var(--ink); }
 
+/* texture library — thumbnail materials */
+#texture-modal {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(10, 11, 14, .72);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.tex-grid { grid-template-columns: repeat(4, 1fr); }
+.tex-cat {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono);
+  font-size: 10px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--orange);
+  margin: 10px 0 0; padding-bottom: 4px;
+  border-bottom: 1px solid var(--seam);
+}
+.texture-item { padding: 6px 6px 8px; cursor: pointer; }
+.texture-item img {
+  width: 100%; aspect-ratio: 1; object-fit: cover;
+  border-radius: 4px; display: block;
+  pointer-events: none;
+}
+
 /* ============ STATUS BAR ============ */
 
 #statusbar {

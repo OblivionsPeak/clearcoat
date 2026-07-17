@@ -17,6 +17,7 @@ import { showroomSupported, playShowroom } from './showroom.js';
 import { studioSupported, openStudio, closeStudio, studioCanvas, studioSetShape, studioSetEnv } from './studio.js';
 import * as persist from './persist.js';
 import { LIBRARY, libraryItemToLayerSource } from './library.js';
+import { TEXTURES, TEX_CATS, texThumb, texFull } from './textures.js';
 import { wandSelect } from './wand.js';
 import { parseRegionMap, createRegionMap, regionAt, regionById, mirrorPoint, mirrorLayerPlacement, uniqueRegionId } from './regions.js';
 import { initAdvisor } from './advisor.js';
@@ -2361,6 +2362,58 @@ $('file-pattern').addEventListener('change', async (e) => {
   if (file) await addImageLayerFromFile(file, true);
 });
 
+// ---------- built-in texture library ----------
+
+const textureModal = $('texture-modal');
+
+function buildTextureGrid() {
+  const grid = $('texture-grid');
+  for (const cat of TEX_CATS) {
+    const items = TEXTURES.filter((t) => t.cat === cat);
+    if (!items.length) continue;
+    const head = document.createElement('div');
+    head.className = 'tex-cat';
+    head.textContent = cat;
+    grid.appendChild(head);
+    for (const t of items) {
+      const btn = document.createElement('button');
+      btn.className = 'library-item texture-item';
+      btn.title = `Insert "${t.name}" as a tiling pattern layer`;
+      btn.innerHTML = `<img src="${texThumb(t)}" alt="${t.name}" loading="lazy">` +
+        `<span class="library-name">${t.name}</span>`;
+      btn.addEventListener('click', () => addTextureItem(t));
+      grid.appendChild(btn);
+    }
+  }
+}
+
+function openTextures() {
+  if (!$('texture-grid').childElementCount) buildTextureGrid();
+  textureModal.hidden = false;
+}
+function closeTextures() { textureModal.hidden = true; }
+
+async function addTextureItem(t) {
+  closeTextures();
+  try {
+    const src = texFull(t);
+    const img = await loadImage(src);
+    const layer = createPatternLayer(img, src, t.name);
+    doc.layers.push(layer);
+    selectLayer(layer.id);
+    markDirty();
+    status(`Added tiling texture "${t.name}" — resize the coverage region with the corner handles.`, 'ok');
+  } catch {
+    status('Could not load that texture.', 'err');
+  }
+}
+
+$('btn-add-texture').addEventListener('click', openTextures);
+$('texture-close').addEventListener('click', closeTextures);
+textureModal.addEventListener('click', (e) => {
+  if (e.target === textureModal) closeTextures();
+});
+
 // ---------- SimTex Pro bridge ----------
 // "+ SimTex" opens SimTex Pro in bridge mode; its "Send to Clearcoat" button
 // posts { type: 'simtex-texture', name, dataUrl } back to this window. Only
@@ -3320,7 +3373,7 @@ $('file-tga').addEventListener('change', async (e) => {
 // Delete removing layers behind the Projects modal). Esc still passes
 // through — the Escape branch below is what closes them.
 function anyModalOpen() {
-  return ['help-modal', 'projects-modal', 'maps-modal', 'library-modal', 'advisor-modal', 'ask-modal']
+  return ['help-modal', 'projects-modal', 'maps-modal', 'library-modal', 'texture-modal', 'advisor-modal', 'ask-modal']
     .some(id => { const el = document.getElementById(id); return el && !el.hidden; });
 }
 
@@ -3343,6 +3396,7 @@ window.addEventListener('keydown', (e) => {
     if (!projectsModal.hidden) { closeProjects(); return; }
     if (!mapsModal.hidden) { closeMapsModal(); return; }
     if (!libraryModal.hidden) { closeLibrary(); return; }
+    if (!textureModal.hidden) { closeTextures(); return; }
     if (annotateMode) { setAnnotateMode(false); return; }
     if (wandMode) { setWandMode(false); return; }
     if (studioView) { setStudioView(false); return; }

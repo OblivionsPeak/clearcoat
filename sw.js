@@ -6,7 +6,7 @@
 // the reload that activates it. If VERSION doesn't change, returning users
 // keep being served the old cached shell.
 
-const VERSION = 'v0.48';
+const VERSION = 'v0.49';
 const CACHE = 'clearcoat-' + VERSION;
 
 // app shell — every path here must exist in the repo
@@ -28,8 +28,26 @@ const PRECACHE = [
   './js/showroom.js',
   './js/studio.js',
   './js/tga.js',
+  './js/textures.js',
   './js/wand.js',
   './js/vendor/ag-psd.min.js',
+  // texture-library picker thumbnails (full-res PNGs runtime-cache on first use)
+  './textures/thumb/carbon-twill.jpg',
+  './textures/thumb/forged-carbon.jpg',
+  './textures/thumb/woodland-camo.jpg',
+  './textures/thumb/desert-camo.jpg',
+  './textures/thumb/digital-camo.jpg',
+  './textures/thumb/urban-camo.jpg',
+  './textures/thumb/brushed-alu.jpg',
+  './textures/thumb/diamond-plate.jpg',
+  './textures/thumb/hammered-ti.jpg',
+  './textures/thumb/hydro-dip.jpg',
+  './textures/thumb/liquid-marble.jpg',
+  './textures/thumb/galaxy.jpg',
+  './textures/thumb/geo-facets.jpg',
+  './textures/thumb/snakeskin.jpg',
+  './textures/thumb/cracked-lava.jpg',
+  './textures/thumb/circuit.jpg',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-192-maskable.png',
