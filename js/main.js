@@ -1293,17 +1293,45 @@ function rebuildLayerList() {
     const order = document.createElement('span');
     order.className = 'order-btns';
     const up = document.createElement('button');
-    up.textContent = '▲'; up.title = 'Bring forward';
-    up.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(layer, +1); });
+    up.textContent = '▲'; up.title = 'Bring forward — Shift-click: to front (or drag the row, or Ctrl+↑)';
+    up.addEventListener('click', (e) => { e.stopPropagation(); e.shiftKey ? moveLayerToEnd(layer, true) : moveLayer(layer, +1); });
     const down = document.createElement('button');
-    down.textContent = '▼'; down.title = 'Send backward';
-    down.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(layer, -1); });
+    down.textContent = '▼'; down.title = 'Send backward — Shift-click: to back (or drag the row, or Ctrl+↓)';
+    down.addEventListener('click', (e) => { e.stopPropagation(); e.shiftKey ? moveLayerToEnd(layer, false) : moveLayer(layer, -1); });
     order.append(up, down);
 
     li.append(thumb, name, mat, dup, lock, vis, del, order);
     li.addEventListener('click', (e) => {
       if (e.ctrlKey || e.metaKey) toggleSelect(layer.id);
       else selectLayer(layer.id);
+    });
+
+    // drag a row to reorder
+    li.draggable = true;
+    li.addEventListener('dragstart', (e) => {
+      dragLayerId = layer.id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', layer.id); // Firefox needs data set
+      li.classList.add('dragging');
+    });
+    li.addEventListener('dragend', () => {
+      dragLayerId = null;
+      clearDropCues();
+      li.classList.remove('dragging');
+    });
+    li.addEventListener('dragover', (e) => {
+      if (!dragLayerId || dragLayerId === layer.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      clearDropCues();
+      const above = e.offsetY < li.offsetHeight / 2;
+      li.classList.add(above ? 'drop-above' : 'drop-below');
+    });
+    li.addEventListener('drop', (e) => {
+      if (!dragLayerId || dragLayerId === layer.id) return;
+      e.preventDefault();
+      const above = e.offsetY < li.offsetHeight / 2;
+      dropLayerOn(dragLayerId, layer.id, above);
     });
     list.appendChild(li);
   });
@@ -1319,6 +1347,56 @@ function moveLayer(layer, dir) {
   [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]];
   rebuildLayerList();
   markDirty();
+}
+
+function moveLayerToEnd(layer, toFront) {
+  const i = doc.layers.indexOf(layer);
+  if (i === -1) return;
+  doc.layers.splice(i, 1);
+  toFront ? doc.layers.push(layer) : doc.layers.unshift(layer);
+  rebuildLayerList();
+  markDirty();
+  status(`"${layer.name}" moved to ${toFront ? 'front' : 'back'}.`);
+}
+
+// Move every selected, unlocked layer one step; iteration order keeps the
+// selection's relative order intact (top-first when raising, bottom-first when lowering)
+function moveSelected(dir) {
+  const sel = doc.layers.filter(l => selectedIds.has(l.id) && !l.locked);
+  if (!sel.length) return;
+  const ordered = dir > 0 ? [...sel].reverse() : sel;
+  for (const layer of ordered) {
+    const i = doc.layers.indexOf(layer);
+    const j = i + dir;
+    if (j < 0 || j >= doc.layers.length) return; // selection hit the edge
+    if (selectedIds.has(doc.layers[j].id)) continue; // don't swap within the selection
+    [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]];
+  }
+  rebuildLayerList();
+  markDirty();
+}
+
+// ---------- layer-list drag reordering ----------
+let dragLayerId = null;
+
+function clearDropCues() {
+  for (const el of $('layer-list').querySelectorAll('.drop-above, .drop-below'))
+    el.classList.remove('drop-above', 'drop-below');
+}
+
+function dropLayerOn(dragId, targetId, above) {
+  const dragged = doc.layers.find(l => l.id === dragId);
+  const target = doc.layers.find(l => l.id === targetId);
+  if (!dragged || !target || dragged === target) return;
+  // work in panel order (top layer first), then map back
+  const disp = [...doc.layers].reverse().filter(l => l !== dragged);
+  let idx = disp.indexOf(target);
+  if (!above) idx += 1;
+  disp.splice(idx, 0, dragged);
+  doc.layers = disp.reverse();
+  rebuildLayerList();
+  markDirty();
+  status(`"${dragged.name}" moved ${above ? 'above' : 'below'} "${target.name}".`);
 }
 
 function deleteSelected() {
@@ -3410,6 +3488,20 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelected(); return; }
   if (e.key === 'l' || e.key === 'L') { setShineView(!shineView); return; }
+
+  // Ctrl+↑/↓ reorder layers; Ctrl+Shift+↑/↓ send to front/back
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault();
+    const dir = e.key === 'ArrowUp' ? +1 : -1;
+    if (e.shiftKey) {
+      const sel = selectedLayers().filter(l => !l.locked);
+      const ordered = dir > 0 ? sel : [...sel].reverse();
+      for (const l of ordered) moveLayerToEnd(l, dir > 0);
+    } else {
+      moveSelected(dir);
+    }
+    return;
+  }
 
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     const targets = selectedLayers().filter(l => !l.locked);

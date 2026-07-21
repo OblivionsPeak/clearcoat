@@ -281,6 +281,9 @@ input  { font-family: inherit; }
   transition: border-color .12s, background .12s;
 }
 .layer-item:hover { border-color: var(--seam-bright); }
+.layer-item.dragging { opacity: .4; }
+.layer-item.drop-above { border-top: 2px solid var(--orange); border-radius: 0 0 4px 4px; }
+.layer-item.drop-below { border-bottom: 2px solid var(--orange); border-radius: 4px 4px 0 0; }
 .layer-item.selected {
   border-left-color: var(--orange);
   background: #221d18;
