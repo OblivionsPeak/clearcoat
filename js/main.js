@@ -1779,23 +1779,24 @@ $('ins-blend').addEventListener('change', () => {
 $('ins-flip-h').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipH = !s.flipH; markDirty(); } });
 $('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipV = !s.flipV; markDirty(); } });
 
-// duplicate the selected layer onto its region's mirror partner panel
-$('ins-mirror').addEventListener('click', () => {
-  const sel = selectedLayer();
-  if (!sel || !doc.regionMap) return;
+// build the mirrored twin of one layer — { copy, dst } on success, { error } if
+// the layer doesn't sit in a region that has a mirror partner
+function mirrorLayerCopy(sel) {
+  if (!doc.regionMap) return { error: 'No region map loaded.' };
   const cx = isRegionLayer(sel) ? sel.rx + sel.rw / 2 : sel.x;
   const cy = isRegionLayer(sel) ? sel.ry + sel.rh / 2 : sel.y;
   const src = regionAt(doc.regionMap, cx, cy);
-  if (!src) { status('Layer center is not inside a mapped region.', 'err'); return; }
-  if (!src.mirror) { status(`"${src.name}" has no mirror partner in the map.`, 'err'); return; }
+  if (!src) return { error: `"${sel.name}" is not inside a mapped region.` };
+  if (!src.mirror) return { error: `"${src.name}" has no mirror partner in the map.` };
   const dst = regionById(doc.regionMap, src.mirror);
-  if (!dst) { status(`Mirror partner "${src.mirror}" is missing from the map.`, 'err'); return; }
+  if (!dst) return { error: `Mirror partner "${src.mirror}" is missing from the map.` };
   const copy = {
     ...sel,
     id: 'L' + Math.random().toString(36).slice(2),
     name: sel.name + ' (mirrored)',
     locked: false,
     matParams: sel.matParams ? { ...sel.matParams } : null,
+    lumSpec: sel.lumSpec ? { ...sel.lumSpec } : null,
     flipH: !sel.flipH,
     // a true mirror image reflects the whole transform, not just the raster
     rotation: -(sel.rotation || 0),
@@ -1815,11 +1816,40 @@ $('ins-mirror').addEventListener('click', () => {
     copy.x = placed.x;
     copy.y = placed.y;
   }
-  doc.layers.push(copy);
-  selectLayer(copy.id);
+  return { copy, dst };
+}
+
+// mirror-clone every selected layer onto its region's partner panel, then
+// select the new copies so they can be nudged/styled as a group
+function mirrorSelected() {
+  const targets = selectedLayers();
+  if (!targets.length || !doc.regionMap) return;
+  const made = [];
+  const skipped = [];
+  let lastName = '', lastDst = null;
+  for (const l of targets) {
+    const res = mirrorLayerCopy(l);
+    if (res.error) { skipped.push(res.error); continue; }
+    doc.layers.push(res.copy);
+    made.push(res.copy.id);
+    lastName = l.name;
+    lastDst = res.dst;
+  }
+  if (!made.length) { status(skipped[0] || 'Nothing to mirror.', 'err'); return; }
+  selectedIds.clear();
+  made.forEach(id => selectedIds.add(id));
+  selectedId = made[made.length - 1];
+  rebuildLayerList();
+  syncInspector();
   markDirty();
-  status(`Mirrored "${sel.name}" onto ${dst.name}.`, 'ok');
-});
+  const what = made.length > 1
+    ? `${made.length} layers mirrored`
+    : `Mirrored "${lastName}" onto ${lastDst.name}`;
+  status(skipped.length ? `${what} — ${skipped.length} skipped: ${skipped[0]}` : `${what}.`,
+    skipped.length ? 'warn' : 'ok');
+}
+
+$('ins-mirror').addEventListener('click', mirrorSelected);
 $('ins-delete').addEventListener('click', deleteSelected);
 $('ins-duplicate').addEventListener('click', duplicateSelected);
 
@@ -3486,7 +3516,11 @@ window.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('btn-save').click(); return; }
     $('btn-spec-view').click(); return;
   }
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelected(); return; }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+    e.preventDefault();
+    if (e.shiftKey) mirrorSelected(); else duplicateSelected();
+    return;
+  }
   if (e.key === 'l' || e.key === 'L') { setShineView(!shineView); return; }
 
   // Ctrl+↑/↓ reorder layers; Ctrl+Shift+↑/↓ send to front/back

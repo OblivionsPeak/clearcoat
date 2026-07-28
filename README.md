@@ -42,6 +42,7 @@ Clearcoat is free. If it saves you time (or a Photoshop license), you can [suppo
 | Arrows (+ Shift) | Nudge layer 1px (10px) |
 | `Delete` | Delete layer |
 | `Ctrl+D` | Duplicate layer |
+| `Ctrl+Shift+D` | Mirror Clone — copy the selection onto its mirrored partner panels (needs a region map) |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+click` (layer list) | Multi-select — group move, delete, duplicate, nudge |
 | `Shift+click` (canvas) | Add/remove a layer from the selection |

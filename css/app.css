@@ -744,6 +744,7 @@ input  { font-family: inherit; }
 #status-msg { color: var(--ink-dim); }
 #status-msg.ok { color: var(--cyan); }
 #status-msg.err { color: var(--danger); }
+#status-msg.warn { color: var(--orange-hot); }
 .status-right { display: flex; gap: 16px; }
 .status-right .mono { font-size: 10px; }
 
