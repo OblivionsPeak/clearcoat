@@ -987,6 +987,12 @@ export function serializeDoc(doc) {
 export function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // Remote artwork must be fetched with CORS or the paint canvas becomes
+    // tainted and every export (getImageData/toBlob) throws. Same-origin,
+    // blob: and data: sources are unaffected by the attribute.
+    if (/^https?:/i.test(src) && !src.startsWith(location.origin)) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('Could not load image'));
     img.src = src;

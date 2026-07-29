@@ -2649,11 +2649,40 @@ $('project-name').addEventListener('input', () => {
 });
 
 function downloadBlob(blob, filename) {
+  // anchor must be in the document for the synthetic click to count in every
+  // Chromium build — a detached <a> is ignored by some download managers
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+}
+
+// Every export reads pixels back off a canvas. If ANY imported image came from
+// another origin without CORS headers the canvas is tainted, and both
+// getImageData and toBlob throw SecurityError — which used to surface as
+// "the button does nothing". Probe once, up front, with a readable message.
+function assertExportable(canvas) {
+  try {
+    canvas.getContext('2d').getImageData(0, 0, 1, 1);
+  } catch {
+    throw new Error(
+      'An imported image is blocking export (cross-origin canvas). Re-import that ' +
+      'artwork as a file from your computer instead of by URL, then export again.'
+    );
+  }
+}
+
+function canvasBlob(canvas, type = 'image/png') {
+  return new Promise((resolve, reject) => {
+    assertExportable(canvas);
+    canvas.toBlob((blob) => {
+      // toBlob hands back null instead of throwing when encoding fails
+      blob ? resolve(blob) : reject(new Error('The browser could not encode the image.'));
+    }, type);
+  });
 }
 
 function safeName() {
@@ -2939,19 +2968,60 @@ window.addEventListener('pagehide', flushAutosave);
 
 // ---------- exports ----------
 
-$('btn-export-png').addEventListener('click', () => {
+// The paint file wants an unmistakable name: car_<custid>.png sorts next to
+// car_<custid>.tga in Downloads and never gets confused with a _spec file.
+function paintExportName(ext) {
+  const custid = $('custid').value.trim();
+  if (doc.target === 'car' && /^\d+$/.test(custid)) {
+    return `car_${doc.customNumber ? 'num_' : ''}${custid}.${ext}`;
+  }
+  return `${safeName()}.${ext}`;
+}
+
+// The spec map keeps iRacing's exact filename — the sim only reads
+// car_spec_<custid>.tga — so the safeguard is in the messaging, not the name.
+function specExportName() {
+  const custid = $('custid').value.trim();
+  return /^\d+$/.test(custid) ? `car_spec_${custid}.tga` : `${safeName()}_spec.tga`;
+}
+
+$('btn-export-png').addEventListener('click', async () => {
   // helmets ship at 1024 — the PNG matches what the TGA would be
-  exportPaintCanvas(renderPaint(doc)).toBlob((blob) => {
-    downloadBlob(blob, safeName() + '.png');
-    status('PNG saved to your Downloads folder.', 'ok');
-  }, 'image/png');
+  try {
+    const blob = await canvasBlob(exportPaintCanvas(renderPaint(doc)));
+    const name = paintExportName('png');
+    downloadBlob(blob, name);
+    status(`${name} saved to your Downloads folder — this is the PAINT file.`, 'ok');
+  } catch (err) {
+    status('PNG export failed: ' + err.message, 'err');
+  }
 });
 
 // Make Trading Paints serve the Clearcoat design: download the PNG TP wants
 // (plus the sim-generated spec .mip when it exists — TP can't create MIPs,
 // only the sim can) and open the upload page.
 $('btn-send-tp').addEventListener('click', async () => {
-  // grab the spec MIP first if the folder is linked and the sim has made one
+  // Open the TP tab FIRST, synchronously. Every await below spends the click's
+  // transient activation, and Chromium (Edge and Chrome alike) silently
+  // swallows a window.open that happens after it — which read as "the button
+  // does nothing".
+  const tpTab = window.open('https://www.tradingpaints.com/upload', '_blank', 'noopener');
+  const popupBlocked = !tpTab;
+
+  // The paint has to leave first and land under an obvious name. Uploading the
+  // purple car_spec_*.tga into TP's paint slot is THE classic mistake — it is
+  // material data (R=metallic, G=roughness, B=clearcoat), not artwork.
+  let paintName;
+  try {
+    const blob = await canvasBlob(exportPaintCanvas(renderPaint(doc)));
+    paintName = paintExportName('png');
+    downloadBlob(blob, paintName);
+  } catch (err) {
+    status('Send to TP failed — the paint could not be exported: ' + err.message, 'err');
+    return;
+  }
+
+  // then the spec MIP, if the folder is linked and the sim has made one
   let gotMip = false, staleMip = false;
   try {
     const custid = $('custid').value.trim();
@@ -2973,31 +3043,45 @@ $('btn-send-tp').addEventListener('click', async () => {
         }
       }
     }
-  } catch { /* no folder / no MIP yet — PNG alone still uploads */ }
-  exportPaintCanvas(renderPaint(doc)).toBlob((blob) => {
-    downloadBlob(blob, safeName() + '.png');
-    window.open('https://www.tradingpaints.com/upload', '_blank', 'noopener');
-    if (staleMip) {
-      status('⚠ The spec MIP is OLDER than your latest spec map — it predates your current finishes. Open the sim showroom once (it regenerates the .mip), then Send to TP again. Uploading this one bakes in your OLD materials.', 'err');
-    } else {
-      status(gotMip
-        ? 'PNG + spec MIP copied to Downloads, Trading Paints upload opened — pick the PNG as the paint and the car_spec .mip as the spec map. Note: custom spec maps need Trading Paints Pro; without Pro, TP serves the paint with default shine.'
-        : 'PNG saved to Downloads + Trading Paints upload opened. For the spec map: Save to iRacing, open the showroom once (the sim writes the .mip into the paints folder), then Get MIPs copies it to Downloads for the TP form.', 'ok');
-    }
-  }, 'image/png');
+  } catch { /* no folder / no MIP yet — the paint alone still uploads */ }
+
+  // a second automatic download trips Chromium's multiple-downloads block,
+  // which only shows as a small icon in the address bar — say so out loud
+  const blockNote = popupBlocked
+    ? ' ⚠ Your browser blocked the Trading Paints tab (and possibly the downloads) — allow pop-ups and automatic downloads for this site via the icon in the address bar, then check Downloads.'
+    : gotMip
+      ? ' If only one file reached Downloads, allow "automatic downloads" via the address-bar icon and click Send to TP again.'
+      : '';
+
+  if (staleMip) {
+    status(`⚠ The spec MIP is OLDER than your latest spec map — it predates your current finishes. Open the sim showroom once (it regenerates the .mip), then Send to TP again. Uploading this one bakes in your OLD materials.${blockNote}`, 'err');
+  } else {
+    status(gotMip
+      ? `Downloads: ${paintName} = the PAINT (upload this one). car_spec_*.mip = the SPEC MAP slot only — never the paint; the spec file looks purple because it stores material values, not colour. Custom spec maps need Trading Paints Pro.${blockNote}`
+      : `${paintName} saved to Downloads — upload THIS as the paint (not any car_spec file; those are purple material data). For a spec map: Save to iRacing, open the showroom once, then Get MIPs.${blockNote}`, 'ok');
+  }
 });
 
 $('btn-export-tga').addEventListener('click', () => {
-  downloadBlob(canvasToTGA(exportPaintCanvas(renderPaint(doc))), safeName() + '.tga');
   // if a paints folder is linked, remind that the direct path exists
   const tip = !$('btn-save-iracing').disabled
     ? ' Tip: "Save to iRacing" writes them straight into your linked paints folder instead.'
     : '';
-  if (doc.target === 'car') {
-    downloadBlob(canvasToTGA(renderSpec(doc), { alpha: true }), safeName() + '_spec.tga');
-    status('Paint + spec TGAs saved to your Downloads folder.' + tip, 'ok');
-  } else {
-    status(`${doc.target === 'helmet' ? 'Helmet' : 'Suit'} paint TGA saved to your Downloads folder.` + tip, 'ok');
+  try {
+    const paintCanvas = exportPaintCanvas(renderPaint(doc));
+    assertExportable(paintCanvas);
+    const paintName = paintExportName('tga');
+    downloadBlob(canvasToTGA(paintCanvas), paintName);
+    if (doc.target === 'car') {
+      const spec = renderSpec(doc);
+      assertExportable(spec);
+      downloadBlob(canvasToTGA(spec, { alpha: true }), specExportName());
+      status(`${paintName} is the PAINT. The _spec file is material data (it looks purple) — it belongs in a spec-map slot, never the paint slot.${tip}`, 'ok');
+    } else {
+      status(`${doc.target === 'helmet' ? 'Helmet' : 'Suit'} paint TGA saved to your Downloads folder.${tip}`, 'ok');
+    }
+  } catch (err) {
+    status('TGA export failed: ' + err.message, 'err');
   }
 });
 
@@ -3153,8 +3237,14 @@ async function saveToiRacing({ quiet = false } = {}) {
     }
     const backed = await backupOriginals(handle, custid);
     const [paintName, specName] = paintFilenames(custid);
-    await persist.writeFileToFolder(handle, paintName, canvasToTGA(exportPaintCanvas(renderPaint(doc))));
-    if (specName) await persist.writeFileToFolder(handle, specName, canvasToTGA(renderSpec(doc), { alpha: true }));
+    const paint = exportPaintCanvas(renderPaint(doc));
+    assertExportable(paint); // clear message instead of a raw SecurityError
+    await persist.writeFileToFolder(handle, paintName, canvasToTGA(paint));
+    if (specName) {
+      const spec = renderSpec(doc);
+      assertExportable(spec);
+      await persist.writeFileToFolder(handle, specName, canvasToTGA(spec, { alpha: true }));
+    }
     await recordGuardBaseline(handle, custid);
     if (quiet) {
       $('status-fs').textContent = '📁 live · ' + new Date().toLocaleTimeString();
