@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.52</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.53</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -362,9 +362,13 @@
       <div class="btn-row">
         <button id="ins-flip-h" class="sm-btn" title="Flip horizontally">Flip H</button>
         <button id="ins-flip-v" class="sm-btn" title="Flip vertically">Flip V</button>
-        <button id="ins-mirror" class="sm-btn" title="Mirror Clone (Ctrl+Shift+D) — copy every selected layer onto its partner panel, mirrored. Needs a region map, with each layer's center inside a mirrored region" disabled>Mirror Clone</button>
+        <button id="ins-mirror" class="sm-btn" title="Mirror Clone (Ctrl+Shift+D) — copy every selected layer onto its partner panel, mirrored. Needs a region map, with each layer's center inside a mirrored region">Mirror Clone</button>
         <button id="ins-duplicate" class="sm-btn" title="Duplicate layer (Ctrl+D)">Duplicate</button>
         <button id="ins-delete" class="sm-btn danger" title="Delete layer (Del)">Delete</button>
+      </div>
+      <div class="btn-row">
+        <button id="ins-group" class="sm-btn" title="Group selection (Ctrl+G) — clicking any member then selects and moves them all together">Group</button>
+        <button id="ins-ungroup" class="sm-btn" title="Ungroup (Ctrl+Shift+G) — keeps the layers, drops the grouping">Ungroup</button>
       </div>
       <div class="btn-row" id="ins-split-row" hidden>
         <button id="ins-split-colors" class="sm-btn wide" title="Detect this layer's dominant colors and split it into one layer per color — each independently recolorable (Tint) and materialable. The original layer is hidden, not deleted">Split colors → layers</button>
@@ -449,6 +453,7 @@
           <tr><td class="mono">F</td><td>Fit to window</td></tr>
           <tr><td class="mono">Ctrl+D</td><td>Duplicate layer</td></tr>
           <tr><td class="mono">Ctrl+Shift+D</td><td>Mirror Clone selection onto partner panels</td></tr>
+          <tr><td class="mono">Ctrl+G / Ctrl+Shift+G</td><td>Group / ungroup selected layers</td></tr>
           <tr><td class="mono">Del</td><td>Delete layer</td></tr>
           <tr><td class="mono">Arrows (+Shift)</td><td>Nudge 1px (10px)</td></tr>
           <tr><td class="mono">Ctrl+↑ / Ctrl+↓</td><td>Layer forward / backward (drag rows works too)</td></tr>
@@ -465,6 +470,7 @@
         <ul class="help-tips">
           <li>🔒 <b>Lock</b> a full-sheet layer (imported liveries auto-lock) so clicks pass through it.</li>
           <li>⧉ duplicates a layer right from its row.</li>
+          <li><b>Group</b> (Ctrl+G) ties decals together — a sponsor block, a number panel. Click any member and the whole group selects, so dragging, nudging, scaling, rotating, reordering, duplicating and Mirror Clone all treat it as one piece. The header row collapses the group and toggles visibility or lock for every layer in it.</li>
           <li><b>Material only</b> stamps a finish without painting — pearl on existing artwork.</li>
           <li><b>Blend</b> (inspector) composites a layer over the paint beneath — Multiply for shading/weathering, Screen for glows.</li>
           <li>Moving layers <b>snap</b> to the sheet center/edges and region-map lines — hold <b>Alt</b> to move freely.</li>

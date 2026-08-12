@@ -806,14 +806,12 @@ viewport.addEventListener('pointerdown', (e) => {
   if (hit) {
     // dragging within a multi-selection moves the whole selection
     if (selectedIds.has(hit.id) && selectedIds.size > 1) {
-      const starts = selectedLayers().filter(l => !l.locked).map(l => ({
-        layer: l, x: l.x, y: l.y, rx: l.rx, ry: l.ry,
-      }));
-      drag = { mode: 'move-multi', startP: p, starts };
-      startLayerDrag(new Set(starts.map(s => s.layer.id)));
+      beginMoveMulti(p);
       return;
     }
     selectLayer(hit.id);
+    // selectLayer widened to a group — drag them as one
+    if (selectedIds.size > 1) { beginMoveMulti(p); return; }
     drag = isRegionLayer(hit)
       ? { mode: 'move-region', layer: hit, offX: p.x - hit.rx, offY: p.y - hit.ry, snaps: snapCandidates(new Set([hit.id])) }
       : { mode: 'move', layer: hit, offX: p.x - hit.x, offY: p.y - hit.y, snaps: snapCandidates(new Set([hit.id])) };
@@ -1032,12 +1030,14 @@ function finishMarquee(d) {
     return bx1 < x2 && bx2 > x1 && by1 < y2 && by2 > y1;
   });
   selectedIds.clear();
-  for (const l of picked) selectedIds.add(l.id);
+  // touching one member of a group pulls in the rest, even outside the rect
+  for (const id of expandGroups(picked.map(l => l.id))) selectedIds.add(id);
   selectedId = picked.length ? picked[picked.length - 1].id : null;
   rebuildLayerList();
   syncInspector();
   requestRender();
-  if (picked.length) status(`${picked.length} layer${picked.length === 1 ? '' : 's'} selected.`);
+  const n = selectedIds.size;
+  if (n) status(`${n} layer${n === 1 ? '' : 's'} selected.`);
 }
 
 viewport.addEventListener('wheel', (e) => {
@@ -1170,7 +1170,8 @@ let patternHintShown = false;
 function selectLayer(id) {
   selectedId = id;
   selectedIds.clear();
-  if (id && id !== 'base') selectedIds.add(id);
+  // selecting one member of a group selects the whole group
+  if (id && id !== 'base') for (const x of expandGroups([id])) selectedIds.add(x);
   rebuildLayerList();
   syncInspector();
   requestRender();
@@ -1186,11 +1187,12 @@ function selectLayer(id) {
 
 // Ctrl+click in the layer list adds/removes from the selection
 function toggleSelect(id) {
+  const kin = expandGroups([id]); // a grouped layer toggles with its siblings
   if (selectedIds.has(id)) {
-    selectedIds.delete(id);
-    if (selectedId === id) selectedId = [...selectedIds].pop() || null;
+    for (const x of kin) selectedIds.delete(x);
+    if (!selectedIds.has(selectedId)) selectedId = [...selectedIds].pop() || null;
   } else {
-    selectedIds.add(id);
+    for (const x of kin) selectedIds.add(x);
     selectedId = id;
   }
   rebuildLayerList();
@@ -1200,6 +1202,178 @@ function toggleSelect(id) {
 
 function selectedLayers() {
   return doc.layers.filter(l => selectedIds.has(l.id));
+}
+
+// start dragging every unlocked layer in the current selection as one rigid body
+function beginMoveMulti(p) {
+  const starts = selectedLayers().filter(l => !l.locked).map(l => ({
+    layer: l, x: l.x, y: l.y, rx: l.rx, ry: l.ry,
+  }));
+  drag = { mode: 'move-multi', startP: p, starts };
+  startLayerDrag(new Set(starts.map(s => s.layer.id)));
+}
+
+// ---------- layer groups ----------
+// Flat (non-nested) groups. `doc.groups` holds { id, name, collapsed } and each
+// member layer carries `groupId`. Grouping is purely a *selection* feature —
+// the renderer never sees a group — so clicking one member selects them all and
+// every existing multi-select path (drag, group bbox handles, arrow-key nudge,
+// duplicate, mirror, reorder) moves the whole group with no extra work.
+
+function groupById(id) {
+  return (doc.groups || []).find(g => g.id === id) || null;
+}
+
+function groupMembers(id) {
+  return doc.layers.filter(l => l.groupId === id);
+}
+
+// drop groups that lost all their members and groupIds pointing at nothing —
+// call after anything that deletes or ungroups layers
+function pruneGroups() {
+  if (!doc.groups) doc.groups = [];
+  const declared = new Set(doc.groups.map(g => g.id));
+  for (const l of doc.layers) if (l.groupId && !declared.has(l.groupId)) l.groupId = null;
+  const used = new Set(doc.layers.map(l => l.groupId).filter(Boolean));
+  doc.groups = doc.groups.filter(g => used.has(g.id));
+}
+
+// widen a set of layer ids to include every sibling of any group it touches
+function expandGroups(ids) {
+  const out = new Set(ids);
+  const hit = new Set();
+  for (const l of doc.layers) if (out.has(l.id) && l.groupId) hit.add(l.groupId);
+  if (hit.size) for (const l of doc.layers) if (l.groupId && hit.has(l.groupId)) out.add(l.id);
+  return out;
+}
+
+// the run of layers that reorders as one unit: a group's members, or just the layer
+function layerBlock(layer) {
+  return layer.groupId ? groupMembers(layer.groupId) : [layer];
+}
+
+function groupSelected() {
+  const targets = selectedLayers();
+  if (targets.length < 2) {
+    status('Select two or more layers first — Ctrl+click rows in the layer list, or Shift+drag on the sheet.', 'warn');
+    return;
+  }
+  if (!doc.groups) doc.groups = [];
+  const id = 'G' + Math.random().toString(36).slice(2);
+  doc.groups.push({ id, name: `Group ${doc.groups.length + 1}`, collapsed: false });
+  for (const l of targets) l.groupId = id;
+  // pull the members together at the topmost one's slot: a group scattered
+  // through the stack can't be drawn as one block in the list, and reordering
+  // it would drag unrelated layers along
+  const ids = new Set(targets.map(l => l.id));
+  const topAt = doc.layers.reduce((acc, l, i) => (ids.has(l.id) ? i : acc), -1);
+  const rest = doc.layers.filter(l => !ids.has(l.id));
+  const insertAt = doc.layers.slice(0, topAt + 1).filter(l => !ids.has(l.id)).length;
+  doc.layers = [...rest.slice(0, insertAt), ...targets, ...rest.slice(insertAt)];
+  pruneGroups();
+  rebuildLayerList();
+  syncInspector();
+  markDirty();
+  status(`Grouped ${targets.length} layers — click any one to move them all together.`, 'ok');
+}
+
+function ungroupSelected() {
+  const gids = new Set(selectedLayers().map(l => l.groupId).filter(Boolean));
+  if (!gids.size) { status('Nothing in the selection is grouped.', 'warn'); return; }
+  for (const l of doc.layers) if (l.groupId && gids.has(l.groupId)) l.groupId = null;
+  pruneGroups();
+  rebuildLayerList();
+  syncInspector();
+  markDirty();
+  status(gids.size > 1 ? `${gids.size} groups dissolved.` : 'Group dissolved — layers kept.', 'ok');
+}
+
+// one collapsible header row standing above its group's member rows
+function groupHeaderRow(g) {
+  const members = groupMembers(g.id);
+  const li = document.createElement('li');
+  const allSelected = members.length > 0 && members.every(l => selectedIds.has(l.id));
+  li.className = 'layer-group' + (allSelected ? ' selected' : '');
+
+  const caret = document.createElement('button');
+  caret.className = 'vis caret';
+  caret.textContent = g.collapsed ? '▸' : '▾';
+  caret.title = g.collapsed ? 'Expand group' : 'Collapse group';
+  caret.addEventListener('click', (e) => {
+    e.stopPropagation();
+    g.collapsed = !g.collapsed;
+    rebuildLayerList();
+    scheduleAutosave();
+  });
+
+  const name = document.createElement('span');
+  name.className = 'lname gname';
+  name.textContent = g.name;
+  name.title = 'Double-click to rename the group';
+  name.addEventListener('dblclick', async (e) => {
+    e.stopPropagation();
+    const ans = await askDialog({
+      title: 'Rename group',
+      fields: [{ key: 'name', label: 'Group name', value: g.name }],
+      okLabel: 'Rename',
+    });
+    if (!ans || !ans.name.trim()) return;
+    g.name = ans.name.trim();
+    rebuildLayerList();
+    scheduleAutosave();
+  });
+
+  const count = document.createElement('span');
+  count.className = 'lmat';
+  count.textContent = `${members.length} layer${members.length === 1 ? '' : 's'}`;
+
+  // one visibility/lock toggle for the whole group
+  const anyHidden = members.some(l => !l.visible);
+  const vis = document.createElement('button');
+  vis.className = 'vis';
+  vis.textContent = anyHidden ? '–' : '👁';
+  vis.title = anyHidden ? 'Show every layer in the group' : 'Hide every layer in the group';
+  vis.addEventListener('click', (e) => {
+    e.stopPropagation();
+    for (const l of members) l.visible = anyHidden;
+    rebuildLayerList();
+    markDirty();
+  });
+
+  const anyUnlocked = members.some(l => !l.locked);
+  const lock = document.createElement('button');
+  lock.className = 'vis' + (anyUnlocked ? '' : ' locked');
+  lock.textContent = anyUnlocked ? '🔓' : '🔒';
+  lock.title = anyUnlocked ? 'Lock every layer in the group' : 'Unlock every layer in the group';
+  lock.addEventListener('click', (e) => {
+    e.stopPropagation();
+    for (const l of members) l.locked = anyUnlocked;
+    rebuildLayerList();
+    requestRender();
+    scheduleAutosave();
+  });
+
+  const ungroup = document.createElement('button');
+  ungroup.className = 'vis';
+  ungroup.textContent = '⊟';
+  ungroup.title = 'Ungroup (Ctrl+Shift+G) — keeps the layers, drops the grouping';
+  ungroup.addEventListener('click', (e) => {
+    e.stopPropagation();
+    for (const l of members) l.groupId = null;
+    pruneGroups();
+    rebuildLayerList();
+    syncInspector();
+    markDirty();
+    status(`Group "${g.name}" dissolved — layers kept.`, 'ok');
+  });
+
+  li.append(caret, name, count, lock, vis, ungroup);
+  // clicking the header selects the whole group, ready to drag as one
+  li.addEventListener('click', () => {
+    if (!members.length) return;
+    selectLayer(members[members.length - 1].id);
+  });
+  return li;
 }
 
 function rebuildLayerList() {
@@ -1212,9 +1386,22 @@ function rebuildLayerList() {
     list.appendChild(li);
   }
   // top layer first in the panel
+  let openGroup = null; // groupId whose header was last emitted
   [...doc.layers].reverse().forEach((layer) => {
+    const gid = layer.groupId || null;
+    if (gid !== openGroup) {
+      openGroup = gid;
+      if (gid) {
+        const g = groupById(gid);
+        if (g) list.appendChild(groupHeaderRow(g));
+      }
+    }
+    const owner = gid ? groupById(gid) : null;
+    if (owner && owner.collapsed) return; // members hidden under the header
+
     const li = document.createElement('li');
     li.className = 'layer-item'
+      + (gid ? ' in-group' : '')
       + (layer.id === selectedId || selectedIds.has(layer.id) ? ' selected' : '')
       + (layer.visible ? '' : ' hidden-layer');
     li.setAttribute('role', 'option');
@@ -1261,6 +1448,7 @@ function rebuildLayerList() {
       doc.layers = doc.layers.filter(x => x !== layer);
       selectedIds.delete(layer.id);
       if (selectedId === layer.id) selectedId = [...selectedIds].pop() || null;
+      pruneGroups();
       rebuildLayerList();
       syncInspector();
       markDirty();
@@ -1341,22 +1529,35 @@ function rebuildLayerList() {
 }
 
 function moveLayer(layer, dir) {
-  const i = doc.layers.indexOf(layer);
-  const j = i + dir;
-  if (j < 0 || j >= doc.layers.length) return;
-  [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]];
+  const block = layerBlock(layer);
+  if (block.length > 1) {
+    // step the whole group over the first outsider on that side
+    const inBlock = new Set(block.map(l => l.id));
+    const rest = doc.layers.filter(l => !inBlock.has(l.id));
+    const at = doc.layers.slice(0, doc.layers.indexOf(block[0])).filter(l => !inBlock.has(l.id)).length;
+    const to = at + dir;
+    if (to < 0 || to > rest.length) return;
+    doc.layers = [...rest.slice(0, to), ...block, ...rest.slice(to)];
+  } else {
+    const i = doc.layers.indexOf(layer);
+    const j = i + dir;
+    if (j < 0 || j >= doc.layers.length) return;
+    [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]];
+  }
   rebuildLayerList();
   markDirty();
 }
 
 function moveLayerToEnd(layer, toFront) {
-  const i = doc.layers.indexOf(layer);
-  if (i === -1) return;
-  doc.layers.splice(i, 1);
-  toFront ? doc.layers.push(layer) : doc.layers.unshift(layer);
+  const block = layerBlock(layer);
+  const inBlock = new Set(block.map(l => l.id));
+  if (!doc.layers.some(l => inBlock.has(l.id))) return;
+  const rest = doc.layers.filter(l => !inBlock.has(l.id));
+  doc.layers = toFront ? [...rest, ...block] : [...block, ...rest];
   rebuildLayerList();
   markDirty();
-  status(`"${layer.name}" moved to ${toFront ? 'front' : 'back'}.`);
+  const what = block.length > 1 ? `Group "${groupById(layer.groupId)?.name || 'group'}"` : `"${layer.name}"`;
+  status(`${what} moved to ${toFront ? 'front' : 'back'}.`);
 }
 
 // Move every selected, unlocked layer one step; iteration order keeps the
@@ -1388,21 +1589,36 @@ function dropLayerOn(dragId, targetId, above) {
   const dragged = doc.layers.find(l => l.id === dragId);
   const target = doc.layers.find(l => l.id === targetId);
   if (!dragged || !target || dragged === target) return;
+  // a grouped row carries its whole group; dropping inside your own group is a no-op
+  const block = layerBlock(dragged);
+  const inBlock = new Set(block.map(l => l.id));
+  if (inBlock.has(target.id)) return;
   // work in panel order (top layer first), then map back
-  const disp = [...doc.layers].reverse().filter(l => l !== dragged);
+  const disp = [...doc.layers].reverse().filter(l => !inBlock.has(l.id));
   let idx = disp.indexOf(target);
+  // dropping a non-member onto a row *inside* a group would split that group in
+  // two; snap to the nearer edge of it so the members stay one contiguous run
+  if (target.groupId && target.groupId !== dragged.groupId) {
+    const span = disp.filter(l => l.groupId === target.groupId);
+    const first = disp.indexOf(span[0]);
+    const last = disp.indexOf(span[span.length - 1]);
+    idx = (idx - first) <= (last - idx) ? first : last;
+    above = (idx === first);
+  }
   if (!above) idx += 1;
-  disp.splice(idx, 0, dragged);
+  disp.splice(idx, 0, ...[...block].reverse());
   doc.layers = disp.reverse();
   rebuildLayerList();
   markDirty();
-  status(`"${dragged.name}" moved ${above ? 'above' : 'below'} "${target.name}".`);
+  const what = block.length > 1 ? `Group "${groupById(dragged.groupId)?.name || 'group'}"` : `"${dragged.name}"`;
+  status(`${what} moved ${above ? 'above' : 'below'} "${target.name}".`);
 }
 
 function deleteSelected() {
   const targets = selectedLayers();
   if (!targets.length) return;
   doc.layers = doc.layers.filter(l => !selectedIds.has(l.id));
+  pruneGroups();
   selectLayer(null);
   markDirty();
   status(targets.length > 1 ? `${targets.length} layers deleted.` : 'Layer deleted.');
@@ -1414,6 +1630,7 @@ function duplicateLayer(layer) {
     id: 'L' + Math.random().toString(36).slice(2),
     name: layer.name + ' copy',
     locked: false, // a fresh copy is for editing
+    groupId: null, // a lone copy stands apart; duplicateSelected re-groups whole groups
     matParams: layer.matParams ? { ...layer.matParams } : null,
     lumSpec: layer.lumSpec ? { ...layer.lumSpec } : null,
   };
@@ -1429,10 +1646,23 @@ function duplicateSelected() {
   if (!targets.length) return;
   if (targets.length === 1) { duplicateLayer(targets[0]); return; }
   // duplicate the whole selection and select the copies
+  const remap = new Map(); // original groupId → the copies' fresh group
   const copies = targets.map(l => {
     duplicateLayer(l);
-    return doc.layers[doc.layers.length - 1].id;
+    const copy = doc.layers[doc.layers.length - 1];
+    // duplicating a whole group yields a group, not loose layers
+    if (l.groupId) {
+      if (!remap.has(l.groupId)) {
+        const src = groupById(l.groupId);
+        const gid = 'G' + Math.random().toString(36).slice(2);
+        (doc.groups || (doc.groups = [])).push({ id: gid, name: `${src ? src.name : 'Group'} copy`, collapsed: false });
+        remap.set(l.groupId, gid);
+      }
+      copy.groupId = remap.get(l.groupId);
+    }
+    return copy.id;
   });
+  pruneGroups();
   selectedIds.clear();
   copies.forEach(id => selectedIds.add(id));
   selectedId = copies[copies.length - 1];
@@ -1528,7 +1758,16 @@ function syncInspector() {
     // skew/stretch only make sense for image-like layers (patterns/fills are regions)
     $('ins-skx-wrap').hidden = $('ins-sky-wrap').hidden = $('ins-scy-wrap').hidden =
       sel.type !== 'image' && sel.type !== 'text';
-    $('ins-mirror').disabled = !doc.regionMap;
+    // stays clickable without a region map: a dead greyed-out button reads as
+    // "broken", whereas clicking now says exactly what's missing
+    const mirrorBtn = $('ins-mirror');
+    mirrorBtn.disabled = false;
+    mirrorBtn.classList.toggle('needs-setup', !doc.regionMap);
+    mirrorBtn.title = doc.regionMap
+      ? 'Mirror Clone (Ctrl+Shift+D) — copy every selected layer onto its partner panel, mirrored. Each layer\'s center must sit inside a mirrored region.'
+      : 'Mirror Clone needs a region map — load one from the Template panel, or draw your own with Annotate.';
+    $('ins-group').disabled = selectedIds.size < 2;
+    $('ins-ungroup').disabled = !selectedLayers().some(l => l.groupId);
   }
   if (isBase) syncBaseColorFields();
   syncMaterialGrid();
@@ -1795,6 +2034,7 @@ function mirrorLayerCopy(sel) {
     id: 'L' + Math.random().toString(36).slice(2),
     name: sel.name + ' (mirrored)',
     locked: false,
+    groupId: null, // mirrorSelected re-groups whole groups onto a fresh group
     matParams: sel.matParams ? { ...sel.matParams } : null,
     lumSpec: sel.lumSpec ? { ...sel.lumSpec } : null,
     flipH: !sel.flipH,
@@ -1823,18 +2063,38 @@ function mirrorLayerCopy(sel) {
 // select the new copies so they can be nudged/styled as a group
 function mirrorSelected() {
   const targets = selectedLayers();
-  if (!targets.length || !doc.regionMap) return;
+  // these two used to return silently, which read as "the button is broken"
+  if (!targets.length) {
+    status('Select a layer first, then Mirror Clone drops a flipped copy on the partner panel.', 'warn');
+    return;
+  }
+  if (!doc.regionMap) {
+    status('Mirror Clone needs a region map — it has to know which panel mirrors which. Template panel → "Get map…", or switch on Annotate and drag rectangles over the panels yourself.', 'err');
+    return;
+  }
   const made = [];
   const skipped = [];
+  const remap = new Map(); // original groupId → the mirrored copies' group
   let lastName = '', lastDst = null;
   for (const l of targets) {
     const res = mirrorLayerCopy(l);
     if (res.error) { skipped.push(res.error); continue; }
+    // mirroring a group yields a group, so the copy moves as one unit too
+    if (l.groupId) {
+      if (!remap.has(l.groupId)) {
+        const src = groupById(l.groupId);
+        const gid = 'G' + Math.random().toString(36).slice(2);
+        (doc.groups || (doc.groups = [])).push({ id: gid, name: `${src ? src.name : 'Group'} (mirrored)`, collapsed: false });
+        remap.set(l.groupId, gid);
+      }
+      res.copy.groupId = remap.get(l.groupId);
+    }
     doc.layers.push(res.copy);
     made.push(res.copy.id);
     lastName = l.name;
     lastDst = res.dst;
   }
+  pruneGroups();
   if (!made.length) { status(skipped[0] || 'Nothing to mirror.', 'err'); return; }
   selectedIds.clear();
   made.forEach(id => selectedIds.add(id));
@@ -1850,6 +2110,8 @@ function mirrorSelected() {
 }
 
 $('ins-mirror').addEventListener('click', mirrorSelected);
+$('ins-group').addEventListener('click', groupSelected);
+$('ins-ungroup').addEventListener('click', ungroupSelected);
 $('ins-delete').addEventListener('click', deleteSelected);
 $('ins-duplicate').addEventListener('click', duplicateSelected);
 
@@ -3605,6 +3867,11 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 's' || e.key === 'S') {
     if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('btn-save').click(); return; }
     $('btn-spec-view').click(); return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G')) {
+    e.preventDefault();
+    if (e.shiftKey) ungroupSelected(); else groupSelected();
+    return;
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
     e.preventDefault();

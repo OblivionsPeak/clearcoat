@@ -12,6 +12,7 @@
   --ink-dim:      #9aa0ab;
   --ink-faint:    #5d636e;
   --orange:       #ff4d00;
+  --teal:         #2dd6c1;  /* group accent — matches the group bbox drawn on canvas */
   --orange-hot:   #ff6a26;
   --cyan:         #2dd6c1;
   --danger:       #ff3b4d;
@@ -288,6 +289,53 @@ input  { font-family: inherit; }
   border-left-color: var(--orange);
   background: #221d18;
 }
+/* group header row + the indented member rows beneath it */
+.layer-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--panel);
+  border: 1px solid var(--seam);
+  border-left: 3px solid var(--teal);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.layer-group:hover { border-color: var(--seam-bright); border-left-color: var(--teal); }
+.layer-group.selected { background: #17262a; }
+.layer-group .gname {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--teal);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.layer-group .lmat {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+.layer-group .vis {
+  background: none; border: none;
+  color: var(--ink-faint);
+  font-size: 13px;
+  padding: 2px 4px;
+}
+.layer-group .vis:hover { color: var(--ink); }
+.layer-group .vis.locked { color: var(--orange); }
+.layer-group .caret { font-size: 10px; width: 14px; padding: 2px; }
+/* members sit inset under their header, tied to it by a rail */
+.layer-item.in-group {
+  margin-left: 12px;
+  border-left-color: var(--seam-bright);
+}
+.layer-item.in-group.selected { border-left-color: var(--teal); }
+/* Mirror Clone with no region map loaded — live, but flagged as unconfigured */
+.sm-btn.needs-setup { color: var(--ink-faint); border-style: dashed; }
+
 .layer-item .thumb {
   width: 30px; height: 30px;
   border-radius: 3px;

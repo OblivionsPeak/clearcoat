@@ -174,6 +174,7 @@ export function createDoc() {
     baseMaterial: 'gloss',
     baseMatParams: null,
     layers: [],          // bottom → top; image layers only
+    groups: [],          // flat layer groups: { id, name, collapsed }; members carry layer.groupId
     template: null,      // { img, src } — viewport reference only
     templateOpacity: 0.75,
     templateColor: '#ffffff',   // recolor linework for contrast; 'original' = multiply as-is
@@ -958,8 +959,10 @@ export function serializeDoc(doc) {
     template: doc.template ? doc.template.src : null,
     customFonts: (doc.customFonts || []).map(f => ({ name: f.name, data: f.data })),
     regionMap: doc.regionMap || null,
+    groups: (doc.groups || []).map(g => ({ id: g.id, name: g.name, collapsed: !!g.collapsed })),
     layers: doc.layers.map(l => ({
       id: l.id, type: l.type, name: l.name,
+      groupId: l.groupId || null,
       visible: l.visible, locked: !!l.locked, opacity: l.opacity, material: l.material,
       blend: l.blend || 'normal',
       matParams: l.matParams || null,
@@ -1133,5 +1136,26 @@ export async function deserializeDoc(data) {
       });
     } catch { /* skip broken layer */ }
   }
+  // groups are restored after the layers so broken/skipped layers can't leave
+  // a group pointing at nothing: re-attach by id, then keep only groups that
+  // still have members
+  const savedGroupOf = new Map();
+  for (const l of (data.layers || [])) {
+    if (l && l.id && typeof l.groupId === 'string' && l.groupId) savedGroupOf.set(l.id, l.groupId);
+  }
+  const declared = new Set();
+  const groups = [];
+  for (const g of (Array.isArray(data.groups) ? data.groups : [])) {
+    if (!g || typeof g.id !== 'string' || !g.id || declared.has(g.id)) continue;
+    declared.add(g.id);
+    groups.push({ id: g.id, name: typeof g.name === 'string' && g.name ? g.name : 'Group', collapsed: !!g.collapsed });
+  }
+  const used = new Set();
+  for (const l of doc.layers) {
+    const gid = savedGroupOf.get(l.id);
+    if (gid && declared.has(gid)) { l.groupId = gid; used.add(gid); }
+    else l.groupId = null;
+  }
+  doc.groups = groups.filter(g => used.has(g.id));
   return doc;
 }
