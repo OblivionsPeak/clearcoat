@@ -677,20 +677,51 @@ $('btn-lasso').addEventListener('click', () => setLassoMode(!lassoMode));
 $('btn-lasso-tex').addEventListener('click', () => $('file-wand-pattern').click());
 $('ins-edit-shape').addEventListener('click', () => lassoEditLayer(selectedLayer()));
 
-$('ins-corner-pin').addEventListener('change', (e) => {
+// Flatten a pattern/fill layer into a plain image so it can be warped. A
+// tiling fill covers a rectangle and has no single quad to map, so the current
+// appearance is baked once and the result pinned.
+async function bakeRegionLayer(l) {
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const ctx = c.getContext('2d');
+  // Draw it flat: this layer's own opacity and blend get re-applied when the
+  // baked layer is composited, so baking them in would double them up.
+  const flat = { ...l, opacity: 1, blend: 'normal' };
+  drawLayer(ctx, flat);
+  const src = c.toDataURL('image/png');
+  const img = await loadImage(src);
+  l.type = 'image';
+  l.img = img;
+  l.src = src;
+  l.x = SIZE / 2; l.y = SIZE / 2; l.scale = 1; l.scaleY = null;
+  l.rotation = 0; l.skewX = 0; l.skewY = 0;
+  return l;
+}
+
+$('ins-corner-pin').addEventListener('change', async (e) => {
   const l = selectedLayer();
-  if (!l || !l.img) return;
+  if (!l) return;
   if (e.target.checked) {
-    // Seed the quad from wherever the layer currently sits, so switching it on
-    // changes nothing until a corner is actually dragged.
-    l.corners = cornersFromMatrix(layerMatrix(l), l.img.width, l.img.height);
-    status('Corner pin on — drag the four corners. Untick to go back to normal transform.');
+    const wasRegion = isRegionLayer(l);
+    const rx = l.rx ?? 0, ry = l.ry ?? 0, rw = l.rw ?? SIZE, rh = l.rh ?? SIZE;
+    if (wasRegion) await bakeRegionLayer(l);
+    if (!l.img) { e.target.checked = false; return; }
+    // Seed the quad where the artwork already sits, so ticking it on changes
+    // nothing until a corner is actually dragged.
+    l.corners = wasRegion
+      ? [{ x: rx, y: ry }, { x: rx + rw, y: ry },
+         { x: rx + rw, y: ry + rh }, { x: rx, y: ry + rh }]
+      : cornersFromMatrix(layerMatrix(l), l.img.width, l.img.height);
+    status(wasRegion
+      ? 'Corner pin on — the tiling fill was flattened so it can be warped. Drag the four corners.'
+      : 'Corner pin on — drag the four corners. Untick to go back to normal transform.');
   } else {
     l.corners = null;
     status('Corner pin off.');
   }
   markDirty();
   requestRender();
+  syncInspector();
   draw();
 });
 
@@ -1918,7 +1949,9 @@ function syncInspector() {
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
     $('ins-spec-only').checked = !!sel.specOnly;
     $('ins-lasso-row').hidden = !(sel.lassoPts && sel.lassoPts.length >= 3);
-    const warpable = sel.type === 'image' || sel.type === 'text';
+    // pattern and fill layers qualify too - they get baked to an image on the
+    // way in, because a tiling fill has no single quad to warp.
+    const warpable = !!sel.img || isRegionLayer(sel);
     $('ins-corner-row').hidden = !warpable;
     $('ins-corner-pin').checked = !!(sel.corners && sel.corners.length === 4);
     $('ins-paint-only').checked = !!sel.paintOnly;
