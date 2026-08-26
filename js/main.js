@@ -19,6 +19,7 @@ import * as persist from './persist.js';
 import { LIBRARY, libraryItemToLayerSource } from './library.js';
 import { TEXTURES, TEX_CATS, texThumb, texFull } from './textures.js';
 import { wandSelect } from './wand.js';
+import { lassoMask, lassoBounds, CLOSE_RADIUS } from './lasso.js';
 import { parseRegionMap, createRegionMap, regionAt, regionById, mirrorPoint, mirrorLayerPlacement, uniqueRegionId } from './regions.js';
 import { initAdvisor } from './advisor.js';
 
@@ -318,6 +319,28 @@ function draw() {
     vctx.restore();
   }
 
+  // lasso — live outline plus point handles, screen space
+  if (lassoMode && lassoPts.length) {
+    vctx.save();
+    const pts = lassoPts.map(q => docToScreen(q.x, q.y));
+    vctx.beginPath();
+    vctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) vctx.lineTo(pts[i].x, pts[i].y);
+    if (lassoCursor) vctx.lineTo(lassoCursor.x, lassoCursor.y);
+    // Dark under-stroke first so the outline stays visible over any artwork.
+    vctx.strokeStyle = 'rgba(0,0,0,.55)'; vctx.lineWidth = 3; vctx.stroke();
+    vctx.strokeStyle = '#2dd6c1'; vctx.lineWidth = 1.5;
+    vctx.setLineDash([5, 4]); vctx.stroke(); vctx.setLineDash([]);
+    pts.forEach((q, i) => {
+      vctx.beginPath();
+      vctx.arc(q.x, q.y, i === 0 ? 5 : 3, 0, Math.PI * 2);
+      vctx.fillStyle = i === 0 ? '#ff4d00' : '#2dd6c1';
+      vctx.fill();
+      vctx.strokeStyle = 'rgba(0,0,0,.6)'; vctx.lineWidth = 1; vctx.stroke();
+    });
+    vctx.restore();
+  }
+
   // snap guides — full-viewport lines where the dragged layer locked on
   if (drag && (drag.snapLineX != null || drag.snapLineY != null)) {
     vctx.save();
@@ -576,6 +599,75 @@ function setWandMode(on) {
   if (on) status('Wand: click a color region — Shift+click selects that color everywhere. Esc to exit.');
 }
 $('btn-wand').addEventListener('click', () => setWandMode(!wandMode));
+
+// ---------- polygon lasso ----------
+
+let lassoMode = false;
+let lassoPts = [];
+let lassoCursor = null;   // screen-space, for the rubber-band segment
+
+function setLassoMode(on) {
+  lassoMode = on;
+  if (on) { if (wandMode) setWandMode(false); if (annotateMode) setAnnotateMode(false); }
+  lassoPts = [];
+  $('btn-lasso').classList.toggle('active', on);
+  const row = $('lasso-row'); if (row) row.hidden = !on;
+  viewport.classList.toggle('wand', on || wandMode || annotateMode);
+  if (on) status('Lasso: click points around the area. Click the first point (or press Enter) to close, Backspace undoes a point, Esc cancels.');
+  draw();
+}
+$('btn-lasso').addEventListener('click', () => setLassoMode(!lassoMode));
+$('btn-lasso-tex').addEventListener('click', () => $('file-wand-pattern').click());
+
+function lassoAddPoint(p) {
+  // Clicking back on the first handle closes the loop.
+  if (lassoPts.length >= 3) {
+    const a = docToScreen(lassoPts[0].x, lassoPts[0].y);
+    const b = docToScreen(p.x, p.y);
+    if (Math.hypot(a.x - b.x, a.y - b.y) <= CLOSE_RADIUS) { lassoClose(); return; }
+  }
+  lassoPts.push({ x: p.x, y: p.y });
+  status(`Lasso: ${lassoPts.length} point${lassoPts.length === 1 ? '' : 's'} — close the loop when the shape is right.`);
+  draw();
+}
+
+async function lassoClose() {
+  if (lassoPts.length < 3) { status('Need at least three points.', 'err'); return; }
+  const pts = lassoPts.slice();
+  const feather = parseFloat(($('lasso-feather') || {}).value || '1.2');
+  const result = lassoMask(pts, feather);
+  if (!result) { status('That loop encloses nothing.', 'err'); return; }
+  lassoPts = [];
+
+  try {
+    const pct = (result.count / (SIZE * SIZE) * 100).toFixed(1);
+    // Same two outcomes as the wand: clip an armed texture, or make a
+    // material-only mask to give a finish to what is already there.
+    if (wandPatternImg) {
+      const maskImg = await loadImage(result.src);
+      const mask = document.createElement('canvas');
+      mask.width = mask.height = SIZE;
+      mask.getContext('2d').drawImage(maskImg, 0, 0);
+      const layer = createMaskedPatternLayer(mask, wandPatternImg, 'lasso fill');
+      doc.layers.push(layer);
+      selectLayer(layer.id);
+      markDirty();
+      status(`Filled the traced area (${pct}% of sheet) with the armed texture.`, 'ok');
+    } else {
+      const img = await loadImage(result.src);
+      const layer = createImageLayer(img, result.src, 'lasso area');
+      layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = 1;
+      layer.specOnly = true;
+      doc.layers.push(layer);
+      selectLayer(layer.id);
+      markDirty();
+      status(`Traced area selected (${pct}% of sheet) — arm a texture or pick a finish.`, 'ok');
+    }
+  } catch (err) {
+    status('Could not build that selection.', 'err');
+  }
+  setLassoMode(false);
+}
 $('wand-tol').addEventListener('input', () => {
   $('wand-tol-val').textContent = $('wand-tol').value;
 });
@@ -602,7 +694,11 @@ $('file-wand-pattern').addEventListener('change', async (e) => {
   if (!file) { $('wand-pattern').checked = false; return; }
   try {
     wandPatternImg = await loadImage(await fileToDataURL(file));
-    status('Pattern armed — wand clicks now fill their selection with the texture.', 'ok');
+    const nm = $('lasso-tex-name');
+    if (nm) { nm.textContent = file.name.replace(/\.[^.]+$/, '').slice(0, 18); nm.style.opacity = '1'; }
+    status(lassoMode
+      ? 'Texture armed — close a loop to fill it.'
+      : 'Pattern armed — wand clicks now fill their selection with the texture.', 'ok');
   } catch {
     $('wand-pattern').checked = false;
     status('Could not load that image.', 'err');
@@ -712,6 +808,12 @@ viewport.addEventListener('pointerdown', (e) => {
   if (annotateMode && e.button === 0 && !spaceHeld) {
     const p = screenToDoc(sx, sy);
     drag = { mode: 'annotate', startP: p, curP: p };
+    return;
+  }
+
+  if (lassoMode && e.button === 0 && !spaceHeld) {
+    const p = screenToDoc(sx, sy);
+    if (p.x >= 0 && p.x < SIZE && p.y >= 0 && p.y < SIZE) lassoAddPoint(p);
     return;
   }
 
@@ -828,6 +930,12 @@ viewport.addEventListener('pointermove', (e) => {
   const p = screenToDoc(sx, sy);
   const region = doc.regionMap ? regionAt(doc.regionMap, p.x, p.y) : null;
   $('status-pos').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}` + (region ? ` — ${region.name}` : '');
+
+  if (lassoMode && lassoPts.length) {
+    lassoCursor = { x: sx, y: sy };
+    draw();
+    return;
+  }
 
   if (!drag) {
     viewport.classList.toggle('over-layer', !!handleAt(sx, sy) || !!hitTest(doc, p.x, p.y));
@@ -3858,11 +3966,19 @@ window.addEventListener('keydown', (e) => {
     if (!libraryModal.hidden) { closeLibrary(); return; }
     if (!textureModal.hidden) { closeTextures(); return; }
     if (annotateMode) { setAnnotateMode(false); return; }
+    if (lassoMode) { setLassoMode(false); status('Lasso cancelled.'); return; }
     if (wandMode) { setWandMode(false); return; }
     if (studioView) { setStudioView(false); return; }
     selectLayer(null); return;
   }
   if (e.key === 'w' || e.key === 'W') { setWandMode(!wandMode); return; }
+  if (e.key === 'l' || e.key === 'L') { setLassoMode(!lassoMode); return; }
+  if (lassoMode && e.key === 'Enter') { e.preventDefault(); lassoClose(); return; }
+  if (lassoMode && e.key === 'Backspace' && lassoPts.length) {
+    e.preventDefault(); lassoPts.pop();
+    status(`Lasso: ${lassoPts.length} point${lassoPts.length === 1 ? '' : 's'}.`);
+    draw(); return;
+  }
   if (e.key === 'f' || e.key === 'F') { fitView(); return; }
   if (e.key === 's' || e.key === 'S') {
     if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('btn-save').click(); return; }

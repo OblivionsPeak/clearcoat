@@ -6,7 +6,7 @@
 // the reload that activates it. If VERSION doesn't change, returning users
 // keep being served the old cached shell.
 
-const VERSION = 'v0.53';
+const VERSION = 'v0.54';
 const CACHE = 'clearcoat-' + VERSION;
 
 // app shell — every path here must exist in the repo
@@ -30,6 +30,7 @@ const PRECACHE = [
   './js/tga.js',
   './js/textures.js',
   './js/wand.js',
+  './js/lasso.js',
   './js/vendor/ag-psd.min.js',
   // texture-library picker thumbnails (full-res PNGs runtime-cache on first use)
   './textures/thumb/carbon-twill.jpg',

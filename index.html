@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.53</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.54</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -134,6 +134,13 @@
       <button id="btn-zoom-in" class="hud-btn" title="Zoom in (+)">+</button>
       <span class="hud-sep"></span>
       <button id="btn-wand" class="hud-btn toggle" title="Magic wand — click the livery to select a contiguous color region, Shift+click to select that color everywhere. The selection becomes a material-only layer: give it pearl/candy/flake without repainting. (W)">Wand</button>
+      <button id="btn-lasso" class="hud-btn toggle" title="Lasso — click points around any area of the sheet to enclose it, then fill it with the armed texture or give it a finish. Use this where the wand cannot help: a shark fin, one winglet, half a door — parts with no colour boundary to select. Click the first point or press Enter to close, Backspace undoes a point. (L)">Lasso</button>
+      <span id="lasso-row" hidden>
+        <label for="lasso-feather" class="hud-readout" style="min-width:auto">Edge</label>
+        <input id="lasso-feather" type="range" min="0" max="6" step="0.2" value="1.2" style="width:60px; accent-color: var(--cyan);" title="Softness of the traced edge, in pixels">
+        <button id="btn-lasso-tex" class="hud-btn" title="Choose the texture to fill the traced area with. With none armed, the loop becomes a material-only selection instead.">Texture…</button>
+        <span id="lasso-tex-name" class="hud-readout mono" style="min-width:auto; opacity:.7">none armed</span>
+      </span>
       <span id="wand-tol-row" hidden>
         <label for="wand-tol" class="hud-readout" style="min-width:auto">Tol</label>
         <input id="wand-tol" type="range" min="0" max="100" value="30" style="width:70px; accent-color: var(--cyan);">
