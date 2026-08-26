@@ -1970,8 +1970,20 @@ function duplicateLayer(layer) {
     groupId: null, // a lone copy stands apart; duplicateSelected re-groups whole groups
     matParams: layer.matParams ? { ...layer.matParams } : null,
     lumSpec: layer.lumSpec ? { ...layer.lumSpec } : null,
+    // Deep-clone anything array-shaped. A spread copies these by reference, so
+    // the copy and the original would share one outline and dragging a handle
+    // on either would move both.
+    corners: Array.isArray(layer.corners) ? layer.corners.map(q => ({ x: q.x, y: q.y })) : null,
+    lassoPts: Array.isArray(layer.lassoPts) ? layer.lassoPts.map(q => ({ x: q.x, y: q.y })) : null,
+    cornerPan: layer.cornerPan ? { ...layer.cornerPan } : null,
+    fx: layer.fx ? { ...layer.fx } : null,
   };
-  if (isRegionLayer(layer)) { copy.rx = layer.rx + 40; copy.ry = layer.ry + 40; }
+  // A pinned layer is positioned entirely by its corners, so nudging x/y would
+  // land the copy exactly on top of the original and look like nothing happened.
+  if (copy.corners) {
+    copy.corners = copy.corners.map(q => ({ x: q.x + 40, y: q.y + 40 }));
+    if (Array.isArray(copy.lassoPts)) copy.lassoPts = copy.lassoPts.map(q => ({ x: q.x + 40, y: q.y + 40 }));
+  } else if (isRegionLayer(layer)) { copy.rx = layer.rx + 40; copy.ry = layer.ry + 40; }
   else { copy.x = layer.x + 40; copy.y = layer.y + 40; }
   doc.layers.push(copy);
   selectLayer(copy.id);
@@ -2389,13 +2401,33 @@ function mirrorLayerCopy(sel) {
     groupId: null, // mirrorSelected re-groups whole groups onto a fresh group
     matParams: sel.matParams ? { ...sel.matParams } : null,
     lumSpec: sel.lumSpec ? { ...sel.lumSpec } : null,
+    // deep-clone, or the mirror and its source share one outline
+    corners: Array.isArray(sel.corners) ? sel.corners.map(q => ({ x: q.x, y: q.y })) : null,
+    lassoPts: Array.isArray(sel.lassoPts) ? sel.lassoPts.map(q => ({ x: q.x, y: q.y })) : null,
+    cornerPan: sel.cornerPan ? { ...sel.cornerPan } : null,
+    fx: sel.fx ? { ...sel.fx } : null,
     flipH: !sel.flipH,
     // a true mirror image reflects the whole transform, not just the raster
     rotation: -(sel.rotation || 0),
     skewX: -(sel.skewX || 0),
     skewY: -(sel.skewY || 0),
   };
-  if (isRegionLayer(sel)) {
+  if (copy.corners) {
+    // A pinned layer lives entirely in its corners, so reflect those. Swapping
+    // the left/right pairs afterwards keeps the winding consistent, or the
+    // mirrored quad comes out inside-out.
+    const m = copy.corners.map(q => {
+      const r = mirrorPoint(src, dst, q.x, q.y);
+      return { x: r.x, y: r.y };
+    });
+    copy.corners = [m[1], m[0], m[3], m[2]];
+    if (Array.isArray(copy.lassoPts)) {
+      copy.lassoPts = copy.lassoPts.map(q => {
+        const r = mirrorPoint(src, dst, q.x, q.y);
+        return { x: r.x, y: r.y };
+      });
+    }
+  } else if (isRegionLayer(sel)) {
     // mirror both corners of the region rect, then normalize
     const p1 = mirrorPoint(src, dst, sel.rx, sel.ry);
     const p2 = mirrorPoint(src, dst, sel.rx + sel.rw, sel.ry + sel.rh);
