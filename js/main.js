@@ -756,6 +756,25 @@ $('ins-corner-pin').addEventListener('change', async (e) => {
     status(wasRegion
       ? 'Corner pin on — the tiling fill was flattened so it can be warped. Drag the four corners.'
       : 'Corner pin on — drag the four corners. Untick to go back to normal transform.');
+  } else if (l.corners) {
+    // Unpinning used to drop straight back to whatever x/y/scale the layer had
+    // before, which for a flattened pattern was centred at full size - so the
+    // artwork leapt back to a square in the middle of the sheet. Carry the
+    // quad's position and size across so it stays put, just un-warped.
+    const q = l.corners;
+    const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+    const w = (len(q[0], q[1]) + len(q[3], q[2])) / 2;
+    const h = (len(q[0], q[3]) + len(q[1], q[2])) / 2;
+    l.x = (q[0].x + q[1].x + q[2].x + q[3].x) / 4;
+    l.y = (q[0].y + q[1].y + q[2].y + q[3].y) / 4;
+    if (l.img && l.img.width && l.img.height) {
+      l.scale = w / l.img.width;
+      l.scaleY = h / l.img.height;
+    }
+    // Keep the top edge's angle so an un-warped copy does not spring level.
+    l.rotation = Math.atan2(q[1].y - q[0].y, q[1].x - q[0].x) * 180 / Math.PI;
+    l.corners = null;
+    status('Corner pin off — kept in place as a plain rectangle.');
   } else {
     l.corners = null;
     status('Corner pin off.');
@@ -982,11 +1001,15 @@ viewport.addEventListener('pointerdown', (e) => {
     const selP = selectedLayer();
     if (selP && selP.corners && selP.corners.length === 4 && !selP.locked
         && e.button === 0 && !spaceHeld && !handleAt(sx, sy)
-        && (selP.cornerFit || 'cover') === 'cover'
         && pointInQuad(screenToDoc(sx, sy), selP.corners)) {
+      // Drag moves the shape, like every other layer. Alt slides the artwork
+      // inside it instead - making pan the default stole the move gesture and
+      // left a pinned layer with no way to reposition it at all.
       drag = {
-        mode: 'corner-pan', layer: selP,
+        mode: (e.altKey || e.metaKey) ? 'corner-pan' : 'corner-move',
+        layer: selP,
         startX: sx, startY: sy,
+        startCorners: selP.corners.map(q => ({ x: q.x, y: q.y })),
         startPan: { ...(selP.cornerPan || { x: 0, y: 0 }) },
       };
       startLayerDrag(new Set([selP.id]));
@@ -1211,6 +1234,13 @@ viewport.addEventListener('pointermove', (e) => {
       l.ry = Math.round(Math.min(a.y, p.y));
       l.rw = Math.max(32, Math.round(Math.abs(p.x - a.x)));
       l.rh = Math.max(32, Math.round(Math.abs(p.y - a.y)));
+      markDirty();
+      break;
+    }
+    case 'corner-move': {
+      const d0 = screenToDoc(drag.startX, drag.startY);
+      const dx = p.x - d0.x, dy = p.y - d0.y;
+      drag.layer.corners = drag.startCorners.map(q => ({ x: q.x + dx, y: q.y + dy }));
       markDirty();
       break;
     }

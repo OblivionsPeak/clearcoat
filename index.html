@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.60</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.61</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -271,7 +271,7 @@
       <label class="tb-check" style="margin-top:10px" title="Don't paint this layer's color — only stamp its material into the spec map. Use over an imported livery to give parts of the existing design a finish (pearl, candy, flake…) without repainting them.">
         <input type="checkbox" id="ins-spec-only"> Material only (don't paint)
       </label>
-      <label class="tb-check" id="ins-corner-row" hidden title="Drag the four corners independently so a rectangle can become a trapezoid or a triangle. Affine skew only makes parallelograms — this is what fits artwork to a tapering panel like a fin or a wing.">
+      <label class="tb-check" id="ins-corner-row" hidden title="Drag the four corners independently so a rectangle can become a trapezoid or a triangle. Drag inside the shape to move the whole thing; hold Alt while dragging to slide the artwork within it instead. Affine skew only makes parallelograms — this is what fits artwork to a tapering panel like a fin or a wing.">
         <input type="checkbox" id="ins-corner-pin"> Corner pin (warp to fit)
       </label>
       <div id="ins-corner-fit-row" hidden style="margin:4px 0 6px">
@@ -282,7 +282,7 @@
       </div>
       <div id="ins-corner-zoom-row" hidden style="margin:4px 0 6px; display:flex; align-items:center; gap:6px">
         <span class="hud-readout" style="min-width:auto">Zoom</span>
-        <input id="ins-corner-zoom" type="range" min="0.5" max="6" step="0.05" value="1" style="flex:1" title="Tighten the crop to show less of the artwork at a larger size. Zooming in is what creates room to drag the image around inside the shape.">
+        <input id="ins-corner-zoom" type="range" min="0.5" max="6" step="0.05" value="1" style="flex:1" title="Tighten the crop to show less of the artwork at a larger size. Zooming in is what creates room to Alt+drag the image around inside the shape.">
         <span id="ins-corner-zoom-val" class="mono hud-readout" style="min-width:30px">1.0x</span>
         <button id="ins-corner-reset" class="hud-btn" title="Re-centre the artwork and reset zoom">Centre</button>
       </div>
