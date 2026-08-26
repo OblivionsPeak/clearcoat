@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.58</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.59</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -279,6 +279,12 @@
           <option value="cover">Fit — keep proportions, trim to shape</option>
           <option value="stretch">Stretch — squash whole image into shape</option>
         </select>
+      </div>
+      <div id="ins-corner-zoom-row" hidden style="margin:4px 0 6px; display:flex; align-items:center; gap:6px">
+        <span class="hud-readout" style="min-width:auto">Zoom</span>
+        <input id="ins-corner-zoom" type="range" min="0.5" max="6" step="0.05" value="1" style="flex:1" title="Tighten the crop to show less of the artwork at a larger size. Zooming in is what creates room to drag the image around inside the shape.">
+        <span id="ins-corner-zoom-val" class="mono hud-readout" style="min-width:30px">1.0x</span>
+        <button id="ins-corner-reset" class="hud-btn" title="Re-centre the artwork and reset zoom">Centre</button>
       </div>
       <div id="ins-lasso-row" hidden style="margin:6px 0">
         <button id="ins-edit-shape" class="hud-btn" style="width:100%" title="Bring this layer's lasso outline back so the handles can be dragged. Press Enter to re-apply — the layer keeps its id, name, opacity and position in the stack.">Edit shape</button>

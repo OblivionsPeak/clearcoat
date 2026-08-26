@@ -567,6 +567,16 @@ function snapEdge(v, spans, cands, tol) {
   return best;
 }
 
+function pointInQuad(p, q) {
+  let inside = false;
+  for (let i = 0, j = 3; i < 4; j = i++) {
+    const a = q[i], b = q[j];
+    if ((a.y > p.y) !== (b.y > p.y) &&
+        p.x < (b.x - a.x) * (p.y - a.y) / ((b.y - a.y) || 1e-9) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 function handleAt(sx, sy) {
   // group handles take priority while a multi-selection is active
   const gb = groupBBox();
@@ -676,6 +686,26 @@ function setLassoMode(on) {
 $('btn-lasso').addEventListener('click', () => setLassoMode(!lassoMode));
 $('btn-lasso-tex').addEventListener('click', () => $('file-wand-pattern').click());
 $('ins-edit-shape').addEventListener('click', () => lassoEditLayer(selectedLayer()));
+
+$('ins-corner-zoom').addEventListener('input', (e) => {
+  const l = selectedLayer();
+  if (!l) return;
+  l.cornerZoom = parseFloat(e.target.value);
+  $('ins-corner-zoom-val').textContent = l.cornerZoom.toFixed(1) + 'x';
+  markDirty();
+  requestRender();
+});
+
+$('ins-corner-reset').addEventListener('click', () => {
+  const l = selectedLayer();
+  if (!l) return;
+  l.cornerPan = { x: 0, y: 0 };
+  l.cornerZoom = 1;
+  syncInspector();
+  markDirty();
+  requestRender();
+  status('Artwork re-centred.');
+});
 
 $('ins-corner-fit').addEventListener('change', (e) => {
   const l = selectedLayer();
@@ -946,6 +976,24 @@ viewport.addEventListener('pointerdown', (e) => {
     return;
   }
 
+  // Dragging inside a pinned layer slides the artwork within its shape, which
+  // is the only way to choose WHICH part of the source ends up on the panel.
+  {
+    const selP = selectedLayer();
+    if (selP && selP.corners && selP.corners.length === 4 && !selP.locked
+        && e.button === 0 && !spaceHeld && !handleAt(sx, sy)
+        && (selP.cornerFit || 'cover') === 'cover'
+        && pointInQuad(screenToDoc(sx, sy), selP.corners)) {
+      drag = {
+        mode: 'corner-pan', layer: selP,
+        startX: sx, startY: sy,
+        startPan: { ...(selP.cornerPan || { x: 0, y: 0 }) },
+      };
+      startLayerDrag(new Set([selP.id]));
+      return;
+    }
+  }
+
   if (lassoMode && e.button === 0 && !spaceHeld) {
     const grabbed = lassoHandleAt(sx, sy);
     if (grabbed !== null && !(grabbed === 0 && lassoPts.length >= 3)) {
@@ -1163,6 +1211,22 @@ viewport.addEventListener('pointermove', (e) => {
       l.ry = Math.round(Math.min(a.y, p.y));
       l.rw = Math.max(32, Math.round(Math.abs(p.x - a.x)));
       l.rh = Math.max(32, Math.round(Math.abs(p.y - a.y)));
+      markDirty();
+      break;
+    }
+    case 'corner-pan': {
+      const l = drag.layer;
+      const q = l.corners;
+      // Convert the screen drag into a fraction of the quad's own span, so the
+      // artwork tracks the cursor at roughly 1:1 whatever the zoom level.
+      const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+      const spanX = (len(q[0], q[1]) + len(q[3], q[2])) / 2 || 1;
+      const spanY = (len(q[0], q[3]) + len(q[1], q[2])) / 2 || 1;
+      const d0 = screenToDoc(drag.startX, drag.startY);
+      l.cornerPan = {
+        x: Math.max(-1, Math.min(1, drag.startPan.x - (p.x - d0.x) / spanX * 2)),
+        y: Math.max(-1, Math.min(1, drag.startPan.y - (p.y - d0.y) / spanY * 2)),
+      };
       markDirty();
       break;
     }
@@ -1968,6 +2032,12 @@ function syncInspector() {
     $('ins-corner-pin').checked = pinned;
     $('ins-corner-fit-row').hidden = !pinned;
     $('ins-corner-fit').value = sel.cornerFit === 'stretch' ? 'stretch' : 'cover';
+    // Zoom and panning only mean anything when the source is being cropped.
+    const cropping = pinned && (sel.cornerFit || 'cover') === 'cover';
+    $('ins-corner-zoom-row').hidden = !cropping;
+    const z = Number.isFinite(sel.cornerZoom) ? sel.cornerZoom : 1;
+    if (document.activeElement !== $('ins-corner-zoom')) $('ins-corner-zoom').value = z;
+    $('ins-corner-zoom-val').textContent = z.toFixed(1) + 'x';
     $('ins-paint-only').checked = !!sel.paintOnly;
     $('ins-blend').value = BLEND_MODES[sel.blend] ? sel.blend : 'normal';
     // fill layers: color/shape/gradient pickers instead of image transforms

@@ -27,11 +27,18 @@ export function quadAspect(q) {
 // a square image into a thin wedge squashes it to unreadable streaks; cropping
 // to the destination's proportions keeps circles round and simply shows less of
 // the artwork.
-function coverCrop(img, aspect) {
+function coverCrop(img, aspect, pan = { x: 0, y: 0 }, zoom = 1) {
   const iw = img.width, ih = img.height;
   let sw = iw, sh = ih;
   if (iw / ih > aspect) sw = ih * aspect; else sh = iw / aspect;
-  const sx = (iw - sw) / 2, sy = (ih - sh) / 2;
+  // Zoom tightens the crop, which is what frees up room to pan.
+  sw = Math.max(8, sw / Math.max(0.05, zoom));
+  sh = Math.max(8, sh / Math.max(0.05, zoom));
+  // pan is -1..1 across whatever slack the crop leaves; 0 stays centred, so
+  // an untouched layer looks exactly as it did before panning existed.
+  const slackX = Math.max(0, iw - sw), slackY = Math.max(0, ih - sh);
+  const sx = Math.min(slackX, Math.max(0, slackX * (0.5 + (pan.x || 0) * 0.5)));
+  const sy = Math.min(slackY, Math.max(0, slackY * (0.5 + (pan.y || 0) * 0.5)));
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(sw));
   c.height = Math.max(1, Math.round(sh));
@@ -144,12 +151,12 @@ function tri(ctx, img, s0, s1, s2, d0, d1, d2) {
 }
 
 /** Draw `img` so its corners land on `corners` = [TL, TR, BR, BL] in ctx space. */
-export function drawWarped(ctx, img, corners, fit = 'stretch') {
+export function drawWarped(ctx, img, corners, fit = 'stretch', pan, zoom) {
   const H = homography(corners);
   if (!H) return false;
 
   let src = img;
-  if (fit === 'cover') src = coverCrop(img, quadAspect(corners));
+  if (fit === 'cover') src = coverCrop(img, quadAspect(corners), pan, zoom);
 
   // Size the source to the destination before sampling, not during.
   const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);

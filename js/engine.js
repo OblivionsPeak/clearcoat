@@ -540,7 +540,8 @@ function drawLayerContent(ctx, layer) {
     // Corner pin: the four points fully describe placement, so the affine
     // matrix is bypassed entirely rather than composed with it.
     ctx.save();
-    drawWarped(ctx, layer.img, layer.corners, layer.cornerFit || 'stretch');
+    drawWarped(ctx, layer.img, layer.corners, layer.cornerFit || 'stretch',
+               layer.cornerPan || { x: 0, y: 0 }, layer.cornerZoom || 1);
     ctx.restore();
   } else {
     ctx.save();
@@ -1000,6 +1001,8 @@ export function serializeDoc(doc) {
       corners: Array.isArray(l.corners) && l.corners.length === 4
         ? l.corners.map(q => ({ x: q.x, y: q.y })) : null,
       cornerFit: l.cornerFit || null,
+      cornerPan: l.cornerPan ? { x: l.cornerPan.x, y: l.cornerPan.y } : null,
+      cornerZoom: Number.isFinite(l.cornerZoom) ? l.cornerZoom : null,
     })),
   };
 }
@@ -1154,6 +1157,9 @@ export async function deserializeDoc(data) {
           && l.corners.every(q => q && Number.isFinite(q.x) && Number.isFinite(q.y))
           ? l.corners.map(q => ({ x: q.x, y: q.y })) : null,
         cornerFit: l.cornerFit === 'cover' ? 'cover' : 'stretch',
+        cornerPan: l.cornerPan && Number.isFinite(l.cornerPan.x) && Number.isFinite(l.cornerPan.y)
+          ? { x: l.cornerPan.x, y: l.cornerPan.y } : { x: 0, y: 0 },
+        cornerZoom: Number.isFinite(l.cornerZoom) ? l.cornerZoom : 1,
         lassoPts: Array.isArray(l.lassoPts) && l.lassoPts.length >= 3
           ? l.lassoPts.filter(q => q && Number.isFinite(q.x) && Number.isFinite(q.y))
                       .map(q => ({ x: q.x, y: q.y }))
