@@ -14,6 +14,55 @@
 
 const GRID = 18;          // cells per side; 18 is smooth well past normal use
 
+// Average edge lengths give the quad's effective proportions. Using one pair of
+// opposite corners instead would mislead badly on a tapering shape.
+export function quadAspect(q) {
+  const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const w = (len(q[0], q[1]) + len(q[3], q[2])) / 2;
+  const h = (len(q[0], q[3]) + len(q[1], q[2])) / 2;
+  return h > 0.0001 ? w / h : 1;
+}
+
+// Crop the source to a target aspect, centred - the "cover" behaviour. Warping
+// a square image into a thin wedge squashes it to unreadable streaks; cropping
+// to the destination's proportions keeps circles round and simply shows less of
+// the artwork.
+function coverCrop(img, aspect) {
+  const iw = img.width, ih = img.height;
+  let sw = iw, sh = ih;
+  if (iw / ih > aspect) sw = ih * aspect; else sh = iw / aspect;
+  const sx = (iw - sw) / 2, sy = (ih - sh) / 2;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(sw));
+  c.height = Math.max(1, Math.round(sh));
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+
+// Successive halving before the warp. drawImage minifies in one step with a
+// poor filter, so shrinking a 2048px source into a few hundred pixels of
+// destination aliases into exactly the shimmering streaks this is meant to
+// avoid. Halving repeatedly is a cheap box filter that keeps the detail legible.
+function downsampleFor(img, dstW, dstH) {
+  let cur = img;
+  let w = img.width, h = img.height;
+  const targetW = Math.max(16, Math.ceil(dstW)), targetH = Math.max(16, Math.ceil(dstH));
+  while (w > targetW * 2 && h > targetH * 2) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.floor(w / 2));
+    c.height = Math.max(1, Math.floor(h / 2));
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(cur, 0, 0, c.width, c.height);
+    cur = c; w = c.width; h = c.height;
+  }
+  return cur;
+}
+
 // Solve the 8 unknowns of the homography taking the unit square to `d`,
 // d = [topLeft, topRight, bottomRight, bottomLeft].
 export function homography(d) {
@@ -95,10 +144,22 @@ function tri(ctx, img, s0, s1, s2, d0, d1, d2) {
 }
 
 /** Draw `img` so its corners land on `corners` = [TL, TR, BR, BL] in ctx space. */
-export function drawWarped(ctx, img, corners) {
+export function drawWarped(ctx, img, corners, fit = 'stretch') {
   const H = homography(corners);
   if (!H) return false;
-  const iw = img.width, ih = img.height;
+
+  let src = img;
+  if (fit === 'cover') src = coverCrop(img, quadAspect(corners));
+
+  // Size the source to the destination before sampling, not during.
+  const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const dstW = (len(corners[0], corners[1]) + len(corners[3], corners[2])) / 2;
+  const dstH = (len(corners[0], corners[3]) + len(corners[1], corners[2])) / 2;
+  src = downsampleFor(src, dstW, dstH);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const iw = src.width, ih = src.height;
 
   // Pre-compute the mapped grid so each vertex is projected once.
   const pts = [];
@@ -116,8 +177,8 @@ export function drawWarped(ctx, img, corners) {
       const s11 = { x: u1, y: v1 }, s01 = { x: u0, y: v1 };
       const d00 = pts[r][c], d10 = pts[r][c + 1];
       const d11 = pts[r + 1][c + 1], d01 = pts[r + 1][c];
-      tri(ctx, img, s00, s10, s11, d00, d10, d11);
-      tri(ctx, img, s00, s11, s01, d00, d11, d01);
+      tri(ctx, src, s00, s10, s11, d00, d10, d11);
+      tri(ctx, src, s00, s11, s01, d00, d11, d01);
     }
   }
   return true;

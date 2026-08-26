@@ -677,6 +677,14 @@ $('btn-lasso').addEventListener('click', () => setLassoMode(!lassoMode));
 $('btn-lasso-tex').addEventListener('click', () => $('file-wand-pattern').click());
 $('ins-edit-shape').addEventListener('click', () => lassoEditLayer(selectedLayer()));
 
+$('ins-corner-fit').addEventListener('change', (e) => {
+  const l = selectedLayer();
+  if (!l) return;
+  l.cornerFit = e.target.value === 'stretch' ? 'stretch' : 'cover';
+  markDirty();
+  requestRender();
+});
+
 // Flatten a pattern/fill layer into a plain image so it can be warped. A
 // tiling fill covers a rectangle and has no single quad to map, so the current
 // appearance is baked once and the result pinned.
@@ -712,6 +720,9 @@ $('ins-corner-pin').addEventListener('change', async (e) => {
       ? [{ x: rx, y: ry }, { x: rx + rw, y: ry },
          { x: rx + rw, y: ry + rh }, { x: rx, y: ry + rh }]
       : cornersFromMatrix(layerMatrix(l), l.img.width, l.img.height);
+    // Fit is the sensible default: stretching a square image into a narrow
+    // wedge is what produced unreadable smearing in the first place.
+    l.cornerFit = l.cornerFit || 'cover';
     status(wasRegion
       ? 'Corner pin on — the tiling fill was flattened so it can be warped. Drag the four corners.'
       : 'Corner pin on — drag the four corners. Untick to go back to normal transform.');
@@ -1953,7 +1964,10 @@ function syncInspector() {
     // way in, because a tiling fill has no single quad to warp.
     const warpable = !!sel.img || isRegionLayer(sel);
     $('ins-corner-row').hidden = !warpable;
-    $('ins-corner-pin').checked = !!(sel.corners && sel.corners.length === 4);
+    const pinned = !!(sel.corners && sel.corners.length === 4);
+    $('ins-corner-pin').checked = pinned;
+    $('ins-corner-fit-row').hidden = !pinned;
+    $('ins-corner-fit').value = sel.cornerFit === 'stretch' ? 'stretch' : 'cover';
     $('ins-paint-only').checked = !!sel.paintOnly;
     $('ins-blend').value = BLEND_MODES[sel.blend] ? sel.blend : 'normal';
     // fill layers: color/shape/gradient pickers instead of image transforms
