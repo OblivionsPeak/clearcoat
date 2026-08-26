@@ -211,6 +211,11 @@ export function createImageLayer(img, src, name) {
 // full local→doc transform for an image layer (skew sits between rotation
 // and scale so its angles act on the unscaled axes); scaleY = null means
 // "follow scale" so old projects and uniform layers behave identically
+// corner-pin warp lives in its own module; see warp.js for why affine is not
+// enough (parallel sides cannot taper).
+import { drawWarped, cornersFromMatrix } from './warp.js';
+export { cornersFromMatrix };
+
 export function layerMatrix(l) {
   return new DOMMatrix()
     .translate(l.x, l.y)
@@ -531,6 +536,12 @@ function drawLayerContent(ctx, layer) {
       .scale(layer.scale * (layer.flipH ? -1 : 1), layer.scale * (layer.flipV ? -1 : 1)));
     ctx.fillStyle = pat;
     ctx.fillRect(layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE);
+  } else if (layer.corners && layer.corners.length === 4) {
+    // Corner pin: the four points fully describe placement, so the affine
+    // matrix is bypassed entirely rather than composed with it.
+    ctx.save();
+    drawWarped(ctx, layer.img, layer.corners);
+    ctx.restore();
   } else {
     ctx.save();
     const m = layerMatrix(layer);
@@ -985,6 +996,9 @@ export function serializeDoc(doc) {
       rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
       // the traced outline, so a lasso layer can be re-shaped after a reload
       lassoPts: Array.isArray(l.lassoPts) ? l.lassoPts.map(q => ({ x: q.x, y: q.y })) : null,
+      // corner-pin quad, absolute doc space
+      corners: Array.isArray(l.corners) && l.corners.length === 4
+        ? l.corners.map(q => ({ x: q.x, y: q.y })) : null,
     })),
   };
 }
@@ -1135,6 +1149,9 @@ export async function deserializeDoc(data) {
         skewX: l.skewX ?? 0, skewY: l.skewY ?? 0,
         flipH: !!l.flipH, flipV: !!l.flipV,
         rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
+        corners: Array.isArray(l.corners) && l.corners.length === 4
+          && l.corners.every(q => q && Number.isFinite(q.x) && Number.isFinite(q.y))
+          ? l.corners.map(q => ({ x: q.x, y: q.y })) : null,
         lassoPts: Array.isArray(l.lassoPts) && l.lassoPts.length >= 3
           ? l.lassoPts.filter(q => q && Number.isFinite(q.x) && Number.isFinite(q.y))
                       .map(q => ({ x: q.x, y: q.y }))

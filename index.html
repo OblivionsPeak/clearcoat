@@ -23,7 +23,7 @@
       <path d="M16 22 L24 8 H26 L18 22 Z" fill="#e8e6e1"/>
     </svg>
     <span class="brand-name">CLEARCOAT</span>
-    <span class="brand-sub">livery workbench <span id="app-version">v0.55</span></span>
+    <span class="brand-sub">livery workbench <span id="app-version">v0.56</span></span>
   </div>
 
   <input id="project-name" class="project-name" type="text" value="untitled livery" spellcheck="false" aria-label="Project name">
@@ -270,6 +270,9 @@
 
       <label class="tb-check" style="margin-top:10px" title="Don't paint this layer's color — only stamp its material into the spec map. Use over an imported livery to give parts of the existing design a finish (pearl, candy, flake…) without repainting them.">
         <input type="checkbox" id="ins-spec-only"> Material only (don't paint)
+      </label>
+      <label class="tb-check" id="ins-corner-row" hidden title="Drag the four corners independently so a rectangle can become a trapezoid or a triangle. Affine skew only makes parallelograms — this is what fits artwork to a tapering panel like a fin or a wing.">
+        <input type="checkbox" id="ins-corner-pin"> Corner pin (warp to fit)
       </label>
       <div id="ins-lasso-row" hidden style="margin:6px 0">
         <button id="ins-edit-shape" class="hud-btn" style="width:100%" title="Bring this layer's lasso outline back so the handles can be dragged. Press Enter to re-apply — the layer keeps its id, name, opacity and position in the stack.">Edit shape</button>

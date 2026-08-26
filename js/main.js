@@ -5,7 +5,7 @@ import {
   GOOGLE_FONTS, registerCustomFont,
   renderPaint, renderSpec, hitTest, hitTestAll, layerCorners, isRegionLayer,
   buildDragCache, renderPaintWithDrag,
-  serializeDoc, deserializeDoc, loadImage,
+  serializeDoc, deserializeDoc, loadImage, cornersFromMatrix, layerMatrix,
   templateOverlay, defaultParams, resolveParams, mixHex, drawLayer,
 } from './engine.js';
 import { detectPalette, splitByPalette } from './separate.js';
@@ -397,7 +397,28 @@ function draw() {
 
   // selection box + handles (screen space for crisp lines)
   const sel = selectedLayer();
-  if (sel && sel.visible) {
+  // A pinned layer draws its own quad and four round handles instead of the
+  // usual axis-aligned box, mid-edge stretchers and rotate knob - none of
+  // which mean anything once the corners are free.
+  if (sel && sel.visible && sel.corners && sel.corners.length === 4) {
+    const q = sel.corners.map(p => docToScreen(p.x, p.y));
+    vctx.save();
+    vctx.beginPath();
+    q.forEach((p, i) => i ? vctx.lineTo(p.x, p.y) : vctx.moveTo(p.x, p.y));
+    vctx.closePath();
+    vctx.strokeStyle = 'rgba(0,0,0,.5)'; vctx.lineWidth = 3; vctx.stroke();
+    vctx.strokeStyle = sel.locked ? '#5d636e' : '#2dd6c1';
+    vctx.lineWidth = 1.5; vctx.setLineDash([6, 4]); vctx.stroke(); vctx.setLineDash([]);
+    if (!sel.locked) {
+      q.forEach((p) => {
+        vctx.beginPath();
+        vctx.arc(p.x, p.y, HANDLE_PX / 2 + 1, 0, Math.PI * 2);
+        vctx.fillStyle = '#2dd6c1'; vctx.fill();
+        vctx.strokeStyle = 'rgba(0,0,0,.65)'; vctx.lineWidth = 1; vctx.stroke();
+      });
+    }
+    vctx.restore();
+  } else if (sel && sel.visible) {
     const corners = layerCorners(sel).map(p => docToScreen(p.x, p.y));
     vctx.save();
     vctx.strokeStyle = sel.locked ? '#5d636e' : '#ff4d00';
@@ -563,6 +584,15 @@ function handleAt(sx, sy) {
   }
   const sel = selectedLayer();
   if (!sel || !sel.visible || sel.locked) return null;
+  // A pinned layer is driven entirely by its four corners, so those handles
+  // replace the usual scale/rotate ones rather than competing with them.
+  if (sel.corners && sel.corners.length === 4) {
+    for (let i = 0; i < 4; i++) {
+      const q = docToScreen(sel.corners[i].x, sel.corners[i].y);
+      if (Math.hypot(sx - q.x, sy - q.y) <= HANDLE_PX + 2) return { type: 'corner', index: i };
+    }
+    return null;
+  }
   if (!isRegionLayer(sel)) {
     const rot = rotateHandlePos(sel);
     if (Math.hypot(sx - rot.x, sy - rot.y) <= HANDLE_PX) return { type: 'rotate' };
@@ -646,6 +676,23 @@ function setLassoMode(on) {
 $('btn-lasso').addEventListener('click', () => setLassoMode(!lassoMode));
 $('btn-lasso-tex').addEventListener('click', () => $('file-wand-pattern').click());
 $('ins-edit-shape').addEventListener('click', () => lassoEditLayer(selectedLayer()));
+
+$('ins-corner-pin').addEventListener('change', (e) => {
+  const l = selectedLayer();
+  if (!l || !l.img) return;
+  if (e.target.checked) {
+    // Seed the quad from wherever the layer currently sits, so switching it on
+    // changes nothing until a corner is actually dragged.
+    l.corners = cornersFromMatrix(layerMatrix(l), l.img.width, l.img.height);
+    status('Corner pin on — drag the four corners. Untick to go back to normal transform.');
+  } else {
+    l.corners = null;
+    status('Corner pin off.');
+  }
+  markDirty();
+  requestRender();
+  draw();
+});
 
 function lassoAddPoint(p) {
   // Clicking back on the first handle closes the loop.
@@ -900,7 +947,10 @@ viewport.addEventListener('pointerdown', (e) => {
   }
   if (handle && sel) {
     const p = screenToDoc(sx, sy);
-    if (handle.type === 'rotate') {
+    if (handle.type === 'corner') {
+      drag = { mode: 'corner', layer: sel, index: handle.index };
+      startLayerDrag(new Set([sel.id]));
+    } else if (handle.type === 'rotate') {
       drag = {
         mode: 'rotate', layer: sel,
         startAngle: Math.atan2(p.y - sel.y, p.x - sel.x) * 180 / Math.PI - sel.rotation,
@@ -1071,6 +1121,17 @@ viewport.addEventListener('pointermove', (e) => {
       l.ry = Math.round(Math.min(a.y, p.y));
       l.rw = Math.max(32, Math.round(Math.abs(p.x - a.x)));
       l.rh = Math.max(32, Math.round(Math.abs(p.y - a.y)));
+      markDirty();
+      break;
+    }
+    case 'corner': {
+      // Shift keeps the drag on one axis, which is how you square off an edge.
+      let nx = p.x, ny = p.y;
+      if (e && e.shiftKey) {
+        const o = drag.layer.corners[drag.index];
+        if (Math.abs(p.x - o.x) > Math.abs(p.y - o.y)) ny = o.y; else nx = o.x;
+      }
+      drag.layer.corners[drag.index] = { x: nx, y: ny };
       markDirty();
       break;
     }
@@ -1857,6 +1918,9 @@ function syncInspector() {
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
     $('ins-spec-only').checked = !!sel.specOnly;
     $('ins-lasso-row').hidden = !(sel.lassoPts && sel.lassoPts.length >= 3);
+    const warpable = sel.type === 'image' || sel.type === 'text';
+    $('ins-corner-row').hidden = !warpable;
+    $('ins-corner-pin').checked = !!(sel.corners && sel.corners.length === 4);
     $('ins-paint-only').checked = !!sel.paintOnly;
     $('ins-blend').value = BLEND_MODES[sel.blend] ? sel.blend : 'normal';
     // fill layers: color/shape/gradient pickers instead of image transforms
