@@ -605,11 +605,38 @@ $('btn-wand').addEventListener('click', () => setWandMode(!wandMode));
 let lassoMode = false;
 let lassoPts = [];
 let lassoCursor = null;   // screen-space, for the rubber-band segment
+let lassoDragIdx = null;  // index of the handle being dragged
+let lassoEditingId = null; // layer being re-shaped, rather than a new one
+
+// Screen-space radius within which a click grabs an existing handle instead of
+// adding another point. Without this the points were write-only: every click
+// appended, so a misplaced one could only be undone, never moved.
+const LASSO_GRAB = 9;
+
+function lassoHandleAt(sx, sy) {
+  for (let i = lassoPts.length - 1; i >= 0; i--) {
+    const q = docToScreen(lassoPts[i].x, lassoPts[i].y);
+    if (Math.hypot(q.x - sx, q.y - sy) <= LASSO_GRAB) return i;
+  }
+  return null;
+}
+
+// Re-open a finished lasso layer for adjustment.
+function lassoEditLayer(layer) {
+  if (!layer || !layer.lassoPts || layer.lassoPts.length < 3) return;
+  setLassoMode(true);
+  lassoPts = layer.lassoPts.map(q => ({ x: q.x, y: q.y }));
+  lassoEditingId = layer.id;
+  status('Editing the shape — drag handles, click to add, Backspace removes the last. Enter re-applies.');
+  draw();
+}
 
 function setLassoMode(on) {
   lassoMode = on;
   if (on) { if (wandMode) setWandMode(false); if (annotateMode) setAnnotateMode(false); }
   lassoPts = [];
+  lassoDragIdx = null;
+  lassoEditingId = null;
   $('btn-lasso').classList.toggle('active', on);
   const row = $('lasso-row'); if (row) row.hidden = !on;
   viewport.classList.toggle('wand', on || wandMode || annotateMode);
@@ -618,6 +645,7 @@ function setLassoMode(on) {
 }
 $('btn-lasso').addEventListener('click', () => setLassoMode(!lassoMode));
 $('btn-lasso-tex').addEventListener('click', () => $('file-wand-pattern').click());
+$('ins-edit-shape').addEventListener('click', () => lassoEditLayer(selectedLayer()));
 
 function lassoAddPoint(p) {
   // Clicking back on the first handle closes the loop.
@@ -641,27 +669,45 @@ async function lassoClose() {
 
   try {
     const pct = (result.count / (SIZE * SIZE) * 100).toFixed(1);
+    const editing = lassoEditingId
+      ? doc.layers.find(l => l.id === lassoEditingId)
+      : null;
+
     // Same two outcomes as the wand: clip an armed texture, or make a
     // material-only mask to give a finish to what is already there.
+    let layer;
     if (wandPatternImg) {
       const maskImg = await loadImage(result.src);
       const mask = document.createElement('canvas');
       mask.width = mask.height = SIZE;
       mask.getContext('2d').drawImage(maskImg, 0, 0);
-      const layer = createMaskedPatternLayer(mask, wandPatternImg, 'lasso fill');
-      doc.layers.push(layer);
-      selectLayer(layer.id);
-      markDirty();
-      status(`Filled the traced area (${pct}% of sheet) with the armed texture.`, 'ok');
+      layer = createMaskedPatternLayer(mask, wandPatternImg, 'lasso fill');
     } else {
       const img = await loadImage(result.src);
-      const layer = createImageLayer(img, result.src, 'lasso area');
+      layer = createImageLayer(img, result.src, 'lasso area');
       layer.x = SIZE / 2; layer.y = SIZE / 2; layer.scale = 1;
       layer.specOnly = true;
+    }
+    // The outline is kept on the layer so the shape stays adjustable. Without
+    // it the points vanish on close and a near-miss can only be redrawn.
+    layer.lassoPts = pts.map(q => ({ x: q.x, y: q.y }));
+
+    if (editing) {
+      // Re-bake in place: keep id, name, opacity, material and stacking so an
+      // adjustment does not read as a brand new layer.
+      editing.img = layer.img;
+      editing.src = layer.src;
+      editing.lassoPts = layer.lassoPts;
+      selectLayer(editing.id);
+      markDirty();
+      status(`Shape updated (${pct}% of sheet).`, 'ok');
+    } else {
       doc.layers.push(layer);
       selectLayer(layer.id);
       markDirty();
-      status(`Traced area selected (${pct}% of sheet) — arm a texture or pick a finish.`, 'ok');
+      status(wandPatternImg
+        ? `Filled the traced area (${pct}% of sheet) with the armed texture. Select it and press Edit shape to adjust.`
+        : `Traced area selected (${pct}% of sheet) — arm a texture or pick a finish.`, 'ok');
     }
   } catch (err) {
     status('Could not build that selection.', 'err');
@@ -812,6 +858,14 @@ viewport.addEventListener('pointerdown', (e) => {
   }
 
   if (lassoMode && e.button === 0 && !spaceHeld) {
+    const grabbed = lassoHandleAt(sx, sy);
+    if (grabbed !== null && !(grabbed === 0 && lassoPts.length >= 3)) {
+      // Handle 0 doubles as the close target once a loop is possible, so it is
+      // only grabbable while the shape is still too small to close.
+      lassoDragIdx = grabbed;
+      viewport.setPointerCapture(e.pointerId);
+      return;
+    }
     const p = screenToDoc(sx, sy);
     if (p.x >= 0 && p.x < SIZE && p.y >= 0 && p.y < SIZE) lassoAddPoint(p);
     return;
@@ -931,8 +985,15 @@ viewport.addEventListener('pointermove', (e) => {
   const region = doc.regionMap ? regionAt(doc.regionMap, p.x, p.y) : null;
   $('status-pos').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}` + (region ? ` — ${region.name}` : '');
 
+  if (lassoMode && lassoDragIdx !== null) {
+    lassoPts[lassoDragIdx] = { x: p.x, y: p.y };
+    draw();
+    return;
+  }
+
   if (lassoMode && lassoPts.length) {
     lassoCursor = { x: sx, y: sy };
+    viewport.classList.toggle('over-layer', lassoHandleAt(sx, sy) !== null);
     draw();
     return;
   }
@@ -1113,6 +1174,7 @@ viewport.addEventListener('pointermove', (e) => {
 });
 
 window.addEventListener('pointerup', () => {
+  if (lassoDragIdx !== null) { lassoDragIdx = null; draw(); }
   if (drag && drag.mode === 'annotate') finishAnnotate(drag);
   if (drag && drag.mode === 'marquee') finishMarquee(drag);
   drag = null;
@@ -1794,6 +1856,7 @@ function syncInspector() {
     $('ins-opacity').value = Math.round(sel.opacity * 100);
     $('ins-opacity-val').textContent = Math.round(sel.opacity * 100) + '%';
     $('ins-spec-only').checked = !!sel.specOnly;
+    $('ins-lasso-row').hidden = !(sel.lassoPts && sel.lassoPts.length >= 3);
     $('ins-paint-only').checked = !!sel.paintOnly;
     $('ins-blend').value = BLEND_MODES[sel.blend] ? sel.blend : 'normal';
     // fill layers: color/shape/gradient pickers instead of image transforms

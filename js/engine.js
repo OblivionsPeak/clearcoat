@@ -983,6 +983,8 @@ export function serializeDoc(doc) {
       skewX: l.skewX || 0, skewY: l.skewY || 0,
       flipH: l.flipH, flipV: l.flipV,
       rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
+      // the traced outline, so a lasso layer can be re-shaped after a reload
+      lassoPts: Array.isArray(l.lassoPts) ? l.lassoPts.map(q => ({ x: q.x, y: q.y })) : null,
     })),
   };
 }
@@ -1133,6 +1135,10 @@ export async function deserializeDoc(data) {
         skewX: l.skewX ?? 0, skewY: l.skewY ?? 0,
         flipH: !!l.flipH, flipV: !!l.flipV,
         rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
+        lassoPts: Array.isArray(l.lassoPts) && l.lassoPts.length >= 3
+          ? l.lassoPts.filter(q => q && Number.isFinite(q.x) && Number.isFinite(q.y))
+                      .map(q => ({ x: q.x, y: q.y }))
+          : null,
       });
     } catch { /* skip broken layer */ }
   }
