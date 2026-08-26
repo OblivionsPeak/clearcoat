@@ -151,12 +151,31 @@ function tri(ctx, img, s0, s1, s2, d0, d1, d2) {
 }
 
 /** Draw `img` so its corners land on `corners` = [TL, TR, BR, BL] in ctx space. */
-export function drawWarped(ctx, img, corners, fit = 'stretch', pan, zoom) {
+// Mirror the source before it is warped. Flipping the destination quad instead
+// would reverse its winding and turn the shape inside out; the artwork is what
+// should mirror, not the hole it sits in.
+function flipSource(img, h, v) {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.translate(h ? img.width : 0, v ? img.height : 0);
+  ctx.scale(h ? -1 : 1, v ? -1 : 1);
+  ctx.drawImage(img, 0, 0);
+  return c;
+}
+
+export function drawWarped(ctx, img, corners, fit = 'stretch', pan, zoom,
+                           flipH = false, flipV = false) {
   const H = homography(corners);
   if (!H) return false;
 
   let src = img;
-  if (fit === 'cover') src = coverCrop(img, quadAspect(corners), pan, zoom);
+  // Flip first, so a mirrored pan lands on the mirrored artwork rather than
+  // fighting it.
+  if (flipH || flipV) src = flipSource(src, flipH, flipV);
+  if (fit === 'cover') src = coverCrop(src, quadAspect(corners), pan, zoom);
 
   // Size the source to the destination before sampling, not during.
   const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);

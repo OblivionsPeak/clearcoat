@@ -541,7 +541,8 @@ function drawLayerContent(ctx, layer) {
     // matrix is bypassed entirely rather than composed with it.
     ctx.save();
     drawWarped(ctx, layer.img, layer.corners, layer.cornerFit || 'stretch',
-               layer.cornerPan || { x: 0, y: 0 }, layer.cornerZoom || 1);
+               layer.cornerPan || { x: 0, y: 0 }, layer.cornerZoom || 1,
+               !!layer.flipH, !!layer.flipV);
     ctx.restore();
   } else {
     ctx.save();

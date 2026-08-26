@@ -2087,7 +2087,7 @@ function syncInspector() {
     $('ins-fill-shape-row').hidden = sel.type !== 'fill';
     $('ins-fill-type-row').hidden = sel.type !== 'fill';
     document.querySelector('.xform-grid').hidden = sel.type === 'fill';
-    $('ins-flip-h').hidden = $('ins-flip-v').hidden = sel.type === 'fill';
+    $('ins-flip-h').hidden = $('ins-flip-v').hidden = sel.type === 'fill' && !sel.corners;
     if (sel.type === 'fill') {
       const ft = sel.fillType || 'solid';
       $('ins-fill-color').value = sel.color;
@@ -2409,8 +2409,8 @@ $('ins-blend').addEventListener('change', () => {
   sel.blend = $('ins-blend').value;
   markDirty();
 });
-$('ins-flip-h').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipH = !s.flipH; markDirty(); } });
-$('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipV = !s.flipV; markDirty(); } });
+$('ins-flip-h').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipH = !s.flipH; markDirty(); requestRender(); } });
+$('ins-flip-v').addEventListener('click', () => { const s = selectedLayer(); if (s) { s.flipV = !s.flipV; markDirty(); requestRender(); } });
 
 // build the mirrored twin of one layer — { copy, dst } on success, { error } if
 // the layer doesn't sit in a region that has a mirror partner
